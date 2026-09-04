@@ -8,11 +8,27 @@ public class AuthResponse {
     private String message;
     private String token;
 
-    // Default constructor
+    // ==============================
+    // SETTINGS
+    // ==============================
+
+    private Boolean darkMode;
+    private Boolean emailNotifications;
+    private Boolean taskReminders;
+
+
+    // ==============================
+    // DEFAULT CONSTRUCTOR
+    // ==============================
+
     public AuthResponse() {
     }
 
-    // Constructor for Signup / Reset Password
+
+    // ==============================
+    // CONSTRUCTOR FOR SIGNUP / RESET PASSWORD
+    // ==============================
+
     public AuthResponse(
             Long id,
             String name,
@@ -25,7 +41,11 @@ public class AuthResponse {
         this.message = message;
     }
 
-    // Constructor for Login with JWT
+
+    // ==============================
+    // CONSTRUCTOR FOR LOGIN WITH JWT
+    // ==============================
+
     public AuthResponse(
             Long id,
             String name,
@@ -40,6 +60,34 @@ public class AuthResponse {
         this.token = token;
     }
 
+
+    // ==============================
+    // CONSTRUCTOR WITH SETTINGS
+    // ==============================
+
+    public AuthResponse(
+            Long id,
+            String name,
+            String email,
+            String message,
+            Boolean darkMode,
+            Boolean emailNotifications,
+            Boolean taskReminders) {
+
+        this.id = id;
+        this.name = name;
+        this.email = email;
+        this.message = message;
+        this.darkMode = darkMode;
+        this.emailNotifications = emailNotifications;
+        this.taskReminders = taskReminders;
+    }
+
+
+    // ==============================
+    // ID
+    // ==============================
+
     public Long getId() {
         return id;
     }
@@ -47,6 +95,11 @@ public class AuthResponse {
     public void setId(Long id) {
         this.id = id;
     }
+
+
+    // ==============================
+    // NAME
+    // ==============================
 
     public String getName() {
         return name;
@@ -56,6 +109,11 @@ public class AuthResponse {
         this.name = name;
     }
 
+
+    // ==============================
+    // EMAIL
+    // ==============================
+
     public String getEmail() {
         return email;
     }
@@ -63,6 +121,11 @@ public class AuthResponse {
     public void setEmail(String email) {
         this.email = email;
     }
+
+
+    // ==============================
+    // MESSAGE
+    // ==============================
 
     public String getMessage() {
         return message;
@@ -72,11 +135,55 @@ public class AuthResponse {
         this.message = message;
     }
 
+
+    // ==============================
+    // TOKEN
+    // ==============================
+
     public String getToken() {
         return token;
     }
 
     public void setToken(String token) {
         this.token = token;
+    }
+
+
+    // ==============================
+    // DARK MODE
+    // ==============================
+
+    public Boolean getDarkMode() {
+        return darkMode;
+    }
+
+    public void setDarkMode(Boolean darkMode) {
+        this.darkMode = darkMode;
+    }
+
+
+    // ==============================
+    // EMAIL NOTIFICATIONS
+    // ==============================
+
+    public Boolean getEmailNotifications() {
+        return emailNotifications;
+    }
+
+    public void setEmailNotifications(Boolean emailNotifications) {
+        this.emailNotifications = emailNotifications;
+    }
+
+
+    // ==============================
+    // TASK REMINDERS
+    // ==============================
+
+    public Boolean getTaskReminders() {
+        return taskReminders;
+    }
+
+    public void setTaskReminders(Boolean taskReminders) {
+        this.taskReminders = taskReminders;
     }
 }

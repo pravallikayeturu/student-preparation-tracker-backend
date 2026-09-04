@@ -1,10 +1,15 @@
 package com.pravallika.student_preparation_tracker.service;
 
+import com.pravallika.student_preparation_tracker.entity.Notification;
 import com.pravallika.student_preparation_tracker.entity.StudyTask;
+import com.pravallika.student_preparation_tracker.entity.User;
+import com.pravallika.student_preparation_tracker.repository.NotificationRepository;
 import com.pravallika.student_preparation_tracker.repository.StudyTaskRepository;
+import com.pravallika.student_preparation_tracker.repository.UserRepository;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -15,176 +20,515 @@ import java.util.List;
 public class NotificationService {
 
     private final StudyTaskRepository studyTaskRepository;
-    private final ResendEmailService resendEmailService;
+    private final NotificationRepository notificationRepository;
+    private final BrevoEmailService brevoEmailService;
+    private final UserRepository userRepository;
+
+    // =====================================================
+    // CONSTRUCTOR
+    // =====================================================
 
     public NotificationService(
             StudyTaskRepository studyTaskRepository,
-            ResendEmailService resendEmailService) {
+            NotificationRepository notificationRepository,
+            BrevoEmailService brevoEmailService,
+            UserRepository userRepository) {
 
         this.studyTaskRepository = studyTaskRepository;
-        this.resendEmailService = resendEmailService;
+        this.notificationRepository = notificationRepository;
+        this.brevoEmailService = brevoEmailService;
+        this.userRepository = userRepository;
     }
 
-    // =========================================
+    // =====================================================
     // CHECK UPCOMING TASKS
-    // Runs every minute
-    // =========================================
+    // RUNS EVERY MINUTE
+    // =====================================================
 
     @Scheduled(fixedRate = 60000)
+    @Transactional
     public void checkUpcomingTasks() {
 
         LocalDateTime now = LocalDateTime.now();
 
-        System.out.println(
-                "========== REMINDER CHECK =========="
-        );
+        System.out.println();
+        System.out.println("========== NOTIFICATION CHECK ==========");
+        System.out.println("Current time: " + now);
 
-        System.out.println(
-                "Current time: " + now
-        );
+        // =====================================================
+        // 1. CHECK STUDY REMINDERS
+        // =====================================================
 
-        // Get only today's tasks whose reminder
-        // has not already been sent
         List<StudyTask> tasks =
                 studyTaskRepository
-                        .findByReadingDateAndReminderSentFalse(
+                        .findByOriginalReadingDateAndReminderSentFalse(
                                 LocalDate.now()
                         );
 
         System.out.println(
-                "Pending reminder tasks found: " + tasks.size()
+                "Pending study reminder tasks: "
+                        + tasks.size()
         );
 
         for (StudyTask task : tasks) {
 
-            // Ignore incomplete tasks
-            if (task.getStartTime() == null
-                    || task.getUserEmail() == null) {
+            if (task == null) {
+                continue;
+            }
+
+            if (task.getOriginalReadingDate() == null
+                    || task.getOriginalStartTime() == null
+                    || task.getUserEmail() == null
+                    || task.getUserEmail().trim().isEmpty()) {
 
                 System.out.println(
-                        "Skipping task ID " + task.getId()
-                                + " because start time or email is missing."
+                        "Skipping task ID "
+                                + task.getId()
+                                + " because required information is missing."
                 );
 
                 continue;
             }
 
-            LocalDateTime startDateTime =
+            // =================================================
+            // GET USER SETTINGS
+            // =================================================
+
+            User user =
+                    userRepository
+                            .findByEmail(task.getUserEmail())
+                            .orElse(null);
+
+            if (user == null) {
+
+                System.out.println(
+                        "Skipping task ID "
+                                + task.getId()
+                                + " because user was not found."
+                );
+
+                continue;
+            }
+
+            // =================================================
+            // TASK REMINDERS OFF
+            // NO IN-APP REMINDER
+            // NO EMAIL
+            // =================================================
+
+            if (!Boolean.TRUE.equals(
+                    user.isTaskReminders())) {
+
+                System.out.println(
+                        "Task reminders are OFF for user: "
+                                + task.getUserEmail()
+                );
+
+                continue;
+            }
+
+            LocalDateTime originalStartDateTime =
                     LocalDateTime.of(
-                            task.getReadingDate(),
-                            task.getStartTime()
+                            task.getOriginalReadingDate(),
+                            task.getOriginalStartTime()
                     );
 
-            // Current time rounded to minute
             LocalDateTime currentMinute =
-                    now.truncatedTo(ChronoUnit.MINUTES);
+                    now.truncatedTo(
+                            ChronoUnit.MINUTES
+                    );
 
-            // Calculate minutes until study session
             long minutesUntilStart =
                     ChronoUnit.MINUTES.between(
                             currentMinute,
-                            startDateTime
+                            originalStartDateTime
                     );
 
-            // =========================================
-            // DEBUG LOG
-            // =========================================
-
             System.out.println(
-                    "Task ID: " + task.getId()
-                            + " | Email: " + task.getUserEmail()
-                            + " | Subject: " + task.getSubject()
-                            + " | Start: " + startDateTime
-                            + " | Current: " + currentMinute
+                    "Task ID: "
+                            + task.getId()
+                            + " | Subject: "
+                            + task.getSubject()
+                            + " | Start: "
+                            + originalStartDateTime
                             + " | Minutes until start: "
                             + minutesUntilStart
-                            + " | Reminder sent: "
-                            + task.isReminderSent()
+                            + " | Deadline: "
+                            + task.getDeadline()
             );
 
-            // =========================================
-            // SEND REMINDER
-            // 10 MINUTES BEFORE
-            //
-            // Using <= 10 and > 0 makes the scheduler
-            // more reliable if it misses exactly one minute.
-            // =========================================
+            // =================================================
+            // STUDY REMINDER
+            // 10 MINUTES BEFORE START
+            // =================================================
 
             if (minutesUntilStart <= 10
-                    && minutesUntilStart > 0) {
+                    && minutesUntilStart >= 0
+                    && !task.isReminderSent()) {
 
                 System.out.println(
-                        "Reminder condition matched for task ID: "
+                        "Creating study reminder for task ID: "
                                 + task.getId()
                 );
 
-                sendReminderEmail(task);
+                // =================================================
+                // CREATE IN-APP NOTIFICATION
+                // TASK REMINDERS = ON
+                // =================================================
+
+                createStudyNotification(task);
+
+                // =================================================
+                // SEND EMAIL
+                // ONLY IF EMAIL NOTIFICATIONS = ON
+                // =================================================
+
+                if (Boolean.TRUE.equals(
+                        user.isEmailNotifications())) {
+
+                    try {
+
+                        brevoEmailService.sendStudyReminder(
+                                task.getUserEmail(),
+                                task.getSubject(),
+                                task.getTopic(),
+                                task.getOriginalReadingDate(),
+                                task.getOriginalStartTime(),
+                                task.getOriginalEndTime()
+                        );
+
+                        System.out.println(
+                                "Study reminder email sent successfully."
+                        );
+
+                    } catch (Exception emailException) {
+
+                        System.err.println(
+                                "Email sending failed: "
+                                        + emailException.getMessage()
+                        );
+                    }
+
+                } else {
+
+                    System.out.println(
+                            "Email notifications are OFF. "
+                                    + "Study reminder email not sent."
+                    );
+                }
+
+                // =================================================
+                // MARK STUDY REMINDER AS SENT
+                // =================================================
+
+                task.setReminderSent(true);
+
+                studyTaskRepository.save(task);
+
+                System.out.println(
+                        "Study reminder marked as sent for task ID: "
+                                + task.getId()
+                );
             }
         }
 
+        // =====================================================
+        // 2. CHECK DEADLINE NOTIFICATIONS
+        // =====================================================
+
+        createDeadlineNotifications();
+
         System.out.println(
-                "========== REMINDER CHECK COMPLETE =========="
+                "========== NOTIFICATION CHECK COMPLETE =========="
         );
+
+        System.out.println();
     }
 
-    // =========================================
-    // SEND REMINDER EMAIL
-    // =========================================
+    // =====================================================
+    // CREATE STUDY NOTIFICATION
+    // =====================================================
 
-    private void sendReminderEmail(StudyTask task) {
+    private void createStudyNotification(
+            StudyTask task) {
 
         try {
 
-            System.out.println(
-                    "Attempting to send reminder email to: "
-                            + task.getUserEmail()
+            // =================================================
+            // CHECK DUPLICATE STUDY NOTIFICATION
+            // =================================================
+
+            boolean alreadyExists =
+                    notificationRepository
+                            .existsByUserEmailAndStudyTaskIdAndType(
+                                    task.getUserEmail(),
+                                    task.getId(),
+                                    "study"
+                            );
+
+            if (alreadyExists) {
+
+                System.out.println(
+                        "Study notification already exists for task ID: "
+                                + task.getId()
+                );
+
+                return;
+            }
+
+            // =================================================
+            // CREATE NOTIFICATION
+            // =================================================
+
+            Notification notification =
+                    new Notification();
+
+            notification.setUserEmail(
+                    task.getUserEmail()
             );
 
-            resendEmailService.sendStudyReminder(
-                    task.getUserEmail(),
-                    task.getSubject(),
-                    task.getTopic(),
-                    task.getReadingDate(),
-                    task.getStartTime(),
-                    task.getEndTime()
+            notification.setType(
+                    "study"
             );
 
-            // =========================================
-            // IMPORTANT:
-            // Mark reminder as sent only AFTER
-            // email sending succeeds.
-            // =========================================
+            notification.setTitle(
+                    "Study Reminder"
+            );
 
-            task.setReminderSent(true);
+            notification.setMessage(
+                    "Your study task \""
+                            + task.getSubject()
+                            + "\" starts in 10 minutes."
+            );
 
-            studyTaskRepository.save(task);
+            notification.setStudyTaskId(
+                    task.getId()
+            );
 
-            System.out.println(
-                    "Study reminder sent successfully to: "
-                            + task.getUserEmail()
+            // =================================================
+            // COPY DEADLINE FROM CREATE TASK
+            // =================================================
+
+            notification.setDeadline(
+                    task.getDeadline()
+            );
+
+            notification.setRead(false);
+
+            notification.setCreatedAt(
+                    LocalDateTime.now()
+            );
+
+            notificationRepository.save(
+                    notification
             );
 
             System.out.println(
-                    "Reminder marked as sent for task ID: "
-                            + task.getId()
+                    "Study notification created successfully."
             );
 
         } catch (Exception e) {
 
-            // If email sending fails,
-            // reminderSent remains false.
-
             System.err.println(
-                    "Failed to send study reminder to: "
-                            + task.getUserEmail()
+                    "Failed to create study notification."
             );
 
-            System.err.println(
-                    "Reason: " + e.getMessage()
-            );
-
-            // Print complete error details
             e.printStackTrace();
         }
+    }
+
+    // =====================================================
+    // CREATE DEADLINE NOTIFICATIONS
+    // =====================================================
+
+    private void createDeadlineNotifications() {
+
+        try {
+
+            // =================================================
+            // GET ALL TASKS
+            // =================================================
+
+            List<StudyTask> allTasks =
+                    studyTaskRepository.findAll();
+
+            LocalDate today =
+                    LocalDate.now();
+
+            for (StudyTask task : allTasks) {
+
+                if (task == null) {
+                    continue;
+                }
+
+                // =================================================
+                // REQUIRED INFORMATION
+                // =================================================
+
+                if (task.getDeadline() == null
+                        || task.getUserEmail() == null
+                        || task.getUserEmail().trim().isEmpty()) {
+
+                    continue;
+                }
+
+                // =================================================
+                // GET USER
+                // =================================================
+
+                User user =
+                        userRepository
+                                .findByEmail(task.getUserEmail())
+                                .orElse(null);
+
+                if (user == null) {
+                    continue;
+                }
+
+                // =================================================
+                // TASK REMINDERS OFF
+                // NO DEADLINE REMINDER
+                // =================================================
+
+                if (!Boolean.TRUE.equals(
+                        user.isTaskReminders())) {
+
+                    continue;
+                }
+
+                // =================================================
+                // ONLY CREATE DEADLINE NOTIFICATION
+                // ON THE DEADLINE DATE
+                // =================================================
+
+                if (!task.getDeadline().equals(today)) {
+                    continue;
+                }
+
+                // =================================================
+                // CHECK DUPLICATE
+                // =================================================
+
+                boolean alreadyExists =
+                        notificationRepository
+                                .existsByUserEmailAndStudyTaskIdAndType(
+                                        task.getUserEmail(),
+                                        task.getId(),
+                                        "deadline"
+                                );
+
+                if (alreadyExists) {
+                    continue;
+                }
+
+                // =================================================
+                // CREATE DEADLINE NOTIFICATION
+                // =================================================
+
+                Notification notification =
+                        new Notification();
+
+                notification.setUserEmail(
+                        task.getUserEmail()
+                );
+
+                notification.setType(
+                        "deadline"
+                );
+
+                notification.setTitle(
+                        "Deadline Reminder"
+                );
+
+                notification.setMessage(
+                        "Your task \""
+                                + task.getSubject()
+                                + "\" is due on "
+                                + formatDeadline(
+                                        task.getDeadline()
+                                )
+                                + "."
+                );
+
+                notification.setStudyTaskId(
+                        task.getId()
+                );
+
+                // =================================================
+                // COPY CREATE TASK DEADLINE
+                // =================================================
+
+                notification.setDeadline(
+                        task.getDeadline()
+                );
+
+                notification.setRead(false);
+
+                notification.setCreatedAt(
+                        LocalDateTime.now()
+                );
+
+                notificationRepository.save(
+                        notification
+                );
+
+                System.out.println(
+                        "========================================"
+                );
+
+                System.out.println(
+                        "DEADLINE NOTIFICATION CREATED"
+                );
+
+                System.out.println(
+                        "Task ID: "
+                                + task.getId()
+                );
+
+                System.out.println(
+                        "Subject: "
+                                + task.getSubject()
+                );
+
+                System.out.println(
+                        "Deadline: "
+                                + task.getDeadline()
+                );
+
+                System.out.println(
+                        "========================================"
+                );
+            }
+
+        } catch (Exception e) {
+
+            System.err.println(
+                    "Failed to create deadline notifications."
+            );
+
+            e.printStackTrace();
+        }
+    }
+
+    // =====================================================
+    // FORMAT DEADLINE
+    // =====================================================
+
+    private String formatDeadline(
+            LocalDate deadline) {
+
+        if (deadline == null) {
+            return "No deadline";
+        }
+
+        return deadline.getMonth()
+                .toString()
+                .substring(0, 1)
+                + deadline.getMonth()
+                        .toString()
+                        .substring(1)
+                        .toLowerCase()
+                + " "
+                + deadline.getDayOfMonth();
     }
 }

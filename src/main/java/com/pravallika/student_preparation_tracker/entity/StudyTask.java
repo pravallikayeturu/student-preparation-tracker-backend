@@ -48,6 +48,73 @@ public class StudyTask {
     private String userEmail;
 
     // =========================================
+    // RECURRENCE
+    // =========================================
+
+    /*
+     * ONE_TIME = task occurs only once
+     *
+     * DAILY = task occurs every day
+     *
+     * WEEKLY = task occurs on selected weekdays
+     *
+     * MONTHLY = task occurs on selected day of each month
+     */
+    private String recurrenceType = "ONE_TIME";
+
+    /*
+     * Used for WEEKLY recurrence.
+     *
+     * Example:
+     *
+     * MONDAY,WEDNESDAY,FRIDAY
+     *
+     * For ONE_TIME, DAILY and MONTHLY this can be null.
+     */
+    @Column(length = 200)
+    private String recurrenceDays;
+
+    /*
+     * Used for MONTHLY recurrence.
+     *
+     * Example:
+     *
+     * 23 = 23rd of every month
+     *
+     * 31 = 31st of every month
+     *
+     * If the selected day does not exist in a month,
+     * the occurrence will use the last day of that month.
+     *
+     * Example:
+     *
+     * Monthly day = 31
+     *
+     * February -> February 28/29
+     * April    -> April 30
+     * June     -> June 30
+     */
+    private Integer recurrenceDayOfMonth;
+
+    /*
+     * Optional date on which recurrence should stop.
+     *
+     * Example:
+     *
+     * Start: August 23
+     * End:   December 23
+     *
+     * Monthly occurrences:
+     *
+     * August 23
+     * September 23
+     * October 23
+     * November 23
+     * December 23
+     */
+    private LocalDate recurrenceEndDate;
+
+    // =========================================
     // NOTIFICATION
     // =========================================
 
@@ -58,6 +125,10 @@ public class StudyTask {
      * This prevents duplicate reminder emails.
      */
     private boolean reminderSent = false;
+
+    // =========================================
+    // PRIORITY ENUM
+    // =========================================
 
     public enum Priority {
         HIGH,
@@ -73,7 +144,7 @@ public class StudyTask {
     }
 
     // =========================================
-    // GETTERS AND SETTERS
+    // ID
     // =========================================
 
     public Long getId() {
@@ -84,6 +155,10 @@ public class StudyTask {
         this.id = id;
     }
 
+    // =========================================
+    // SUBJECT
+    // =========================================
+
     public String getSubject() {
         return subject;
     }
@@ -92,6 +167,10 @@ public class StudyTask {
         this.subject = subject;
     }
 
+    // =========================================
+    // TOPIC
+    // =========================================
+
     public String getTopic() {
         return topic;
     }
@@ -99,6 +178,10 @@ public class StudyTask {
     public void setTopic(String topic) {
         this.topic = topic;
     }
+
+    // =========================================
+    // DESCRIPTION
+    // =========================================
 
     public String getDescription() {
         return description;
@@ -244,6 +327,62 @@ public class StudyTask {
             String userEmail) {
 
         this.userEmail = userEmail;
+    }
+
+    // =========================================
+    // RECURRENCE TYPE
+    // =========================================
+
+    public String getRecurrenceType() {
+        return recurrenceType;
+    }
+
+    public void setRecurrenceType(
+            String recurrenceType) {
+
+        this.recurrenceType = recurrenceType;
+    }
+
+    // =========================================
+    // RECURRENCE DAYS
+    // =========================================
+
+    public String getRecurrenceDays() {
+        return recurrenceDays;
+    }
+
+    public void setRecurrenceDays(
+            String recurrenceDays) {
+
+        this.recurrenceDays = recurrenceDays;
+    }
+
+    // =========================================
+    // RECURRENCE DAY OF MONTH
+    // =========================================
+
+    public Integer getRecurrenceDayOfMonth() {
+        return recurrenceDayOfMonth;
+    }
+
+    public void setRecurrenceDayOfMonth(
+            Integer recurrenceDayOfMonth) {
+
+        this.recurrenceDayOfMonth = recurrenceDayOfMonth;
+    }
+
+    // =========================================
+    // RECURRENCE END DATE
+    // =========================================
+
+    public LocalDate getRecurrenceEndDate() {
+        return recurrenceEndDate;
+    }
+
+    public void setRecurrenceEndDate(
+            LocalDate recurrenceEndDate) {
+
+        this.recurrenceEndDate = recurrenceEndDate;
     }
 
     // =========================================

@@ -4,29 +4,32 @@ import java.time.LocalDateTime;
 import java.util.Random;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.pravallika.student_preparation_tracker.entity.Otp;
 import com.pravallika.student_preparation_tracker.repository.OtpRepository;
 
-import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OtpService {
 
     private final OtpRepository otpRepository;
+    private final BrevoEmailService brevoEmailService;
 
-    public OtpService(OtpRepository otpRepository) {
+    public OtpService(
+            OtpRepository otpRepository,
+            BrevoEmailService brevoEmailService) {
+
         this.otpRepository = otpRepository;
+        this.brevoEmailService = brevoEmailService;
     }
 
-    // =========================
-    // GENERATE OTP
-    // =========================
-    public String generateOtp(String email) {
+    // ==========================================
+    // GENERATE OTP FOR SIGNUP
+    // ==========================================
 
-        String otpCode = String.format(
-                "%06d",
-                new Random().nextInt(1000000)
-        );
+    public String generateSignupOtp(String email) {
+
+        String otpCode = generateOtpCode();
 
         Otp otp = otpRepository
                 .findByEmail(email)
@@ -34,25 +37,98 @@ public class OtpService {
 
         otp.setEmail(email);
         otp.setOtp(otpCode);
-
-        // OTP valid for 5 minutes
         otp.setCreatedAt(LocalDateTime.now());
-
         otp.setExpiresAt(
                 LocalDateTime.now().plusMinutes(5)
         );
 
         otpRepository.save(otp);
 
+        // Signup-specific email
+        brevoEmailService.sendSignupOtpEmail(
+                email,
+                otpCode
+        );
+
         return otpCode;
     }
 
-    // =========================
+    // ==========================================
+    // GENERATE OTP FOR LOGIN
+    // ==========================================
+
+    public String generateLoginOtp(String email) {
+
+        String otpCode = generateOtpCode();
+
+        Otp otp = otpRepository
+                .findByEmail(email)
+                .orElse(new Otp());
+
+        otp.setEmail(email);
+        otp.setOtp(otpCode);
+        otp.setCreatedAt(LocalDateTime.now());
+        otp.setExpiresAt(
+                LocalDateTime.now().plusMinutes(5)
+        );
+
+        otpRepository.save(otp);
+
+        // Login-specific email
+        brevoEmailService.sendLoginOtpEmail(
+                email,
+                otpCode
+        );
+
+        return otpCode;
+    }
+
+    // ==========================================
+    // GENERATE OTP FOR FORGOT PASSWORD
+    // ==========================================
+
+    public String generateForgotPasswordOtp(String email) {
+
+        String otpCode = generateOtpCode();
+
+        Otp otp = otpRepository
+                .findByEmail(email)
+                .orElse(new Otp());
+
+        otp.setEmail(email);
+        otp.setOtp(otpCode);
+        otp.setCreatedAt(LocalDateTime.now());
+        otp.setExpiresAt(
+                LocalDateTime.now().plusMinutes(5)
+        );
+
+        otpRepository.save(otp);
+
+        // Forgot-password-specific email
+        brevoEmailService.sendForgotPasswordOtpEmail(
+                email,
+                otpCode
+        );
+
+        return otpCode;
+    }
+
+    // ==========================================
+    // GENERATE OTP CODE
+    // ==========================================
+
+    private String generateOtpCode() {
+
+        return String.format(
+                "%06d",
+                new Random().nextInt(1000000)
+        );
+    }
+
+    // ==========================================
     // VERIFY OTP
-    // =========================
-    // This method checks the OTP
-    // but does NOT delete it.
-    // =========================
+    // ==========================================
+
     public boolean verifyOtp(
             String email,
             String otpCode) {
@@ -65,28 +141,29 @@ public class OtpService {
             return false;
         }
 
-        // Check OTP value
-        if (!otp.getOtp().equals(otpCode)) {
+        if (otp.getOtp() == null
+                || !otp.getOtp().equals(otpCode)) {
+
             return false;
         }
 
-        // Check OTP expiry
         if (otp.getExpiresAt() == null
                 || otp.getExpiresAt()
                         .isBefore(LocalDateTime.now())) {
 
-            // Delete expired OTP
             otpRepository.delete(otp);
 
             return false;
         }
 
+        // OTP is valid
         return true;
     }
 
-    // =========================
+    // ==========================================
     // DELETE OTP
-    // =========================
+    // ==========================================
+
     @Transactional
     public void deleteOtp(String email) {
 

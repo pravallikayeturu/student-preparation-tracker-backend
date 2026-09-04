@@ -5,70 +5,130 @@ import java.util.Date;
 
 import javax.crypto.SecretKey;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 
 @Service
 public class JwtService {
-@Value("${JWT_SECRET_KEY}")
-private String SECRET_KEY;
 
-    private final long EXPIRATION_TIME =
-            1000 * 60 * 60; // 1 hour
+    // =====================================================
+    // JWT SECRET KEY
+    // =====================================================
 
-    // Create SecretKey
+    @Value("${JWT_SECRET_KEY}")
+    private String secretKey;
+
+
+    // =====================================================
+    // TOKEN EXPIRATION
+    // 4 HOURS
+    // =====================================================
+
+    private static final long EXPIRATION_TIME =
+            1000L * 60 * 60 * 4;
+
+
+    // =====================================================
+    // CREATE SIGNING KEY
+    // =====================================================
+
     private SecretKey getSigningKey() {
 
         return Keys.hmacShaKeyFor(
-                SECRET_KEY.getBytes(StandardCharsets.UTF_8)
+                secretKey.getBytes(StandardCharsets.UTF_8)
         );
     }
 
-    // Generate JWT token
+
+    // =====================================================
+    // GENERATE JWT TOKEN
+    // =====================================================
+
     public String generateToken(String email) {
 
         return Jwts.builder()
+
+                // Store email inside JWT subject
                 .subject(email)
+
+                // Token creation time
                 .issuedAt(new Date())
+
+                // Token expiration time
                 .expiration(
                         new Date(
                                 System.currentTimeMillis()
                                         + EXPIRATION_TIME
                         )
                 )
+
+                // Sign token
                 .signWith(getSigningKey())
+
                 .compact();
     }
 
-    // Extract email from JWT
+
+    // =====================================================
+    // EXTRACT EMAIL FROM TOKEN
+    // =====================================================
+
     public String extractEmail(String token) {
 
-        Claims claims = Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        Claims claims =
+                Jwts.parser()
+
+                        .verifyWith(getSigningKey())
+
+                        .build()
+
+                        .parseSignedClaims(token)
+
+                        .getPayload();
 
         return claims.getSubject();
     }
 
-    // Validate JWT
+
+    // =====================================================
+    // VALIDATE TOKEN
+    // =====================================================
+
     public boolean isTokenValid(String token) {
 
         try {
 
-            Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(token);
+            Claims claims =
+                    Jwts.parser()
 
-            return true;
+                            .verifyWith(getSigningKey())
+
+                            .build()
+
+                            .parseSignedClaims(token)
+
+                            .getPayload();
+
+
+            // Check subject/email exists
+            String email =
+                    claims.getSubject();
+
+
+            return email != null
+                    && !email.trim().isEmpty();
+
 
         } catch (Exception e) {
+
+            System.out.println(
+                    "JWT validation failed: "
+                            + e.getMessage()
+            );
 
             return false;
         }
