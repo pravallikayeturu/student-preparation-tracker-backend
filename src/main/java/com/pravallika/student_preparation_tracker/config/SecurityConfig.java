@@ -44,8 +44,7 @@ public class SecurityConfig {
             // CORS
             // -------------------------------------------------
 
-            .cors(cors -> {})
-
+                    .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
             // -------------------------------------------------
             // CSRF
