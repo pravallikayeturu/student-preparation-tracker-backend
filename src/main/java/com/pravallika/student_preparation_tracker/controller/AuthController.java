@@ -85,28 +85,50 @@ public class AuthController {
 
     // =====================================================
     // SEND LOGIN OTP
-    // =====================================================
+    // ====================================================
 
-    @PostMapping("/send-login-otp")
-    public String sendLoginOtp(
-            @RequestBody SignupRequest request) {
+@PostMapping("/send-login-otp")
+public ResponseEntity<?> sendLoginOtp(
+        @RequestBody OtpLoginRequest request) {
 
-        try {
+    try {
 
-            String otp =
-                    otpService.generateLoginOtp(
-                            request.getEmail()
-                    );
+        // Check email and password first
+        authService.verifyLoginPassword(
+                request.getEmail(),
+                request.getPassword()
+        );
 
-            return "Login OTP sent successfully";
+        // Password is correct → send OTP
+        otpService.generateLoginOtp(
+                request.getEmail()
+        );
 
-        } catch (Exception e) {
+        return ResponseEntity.ok(
+                Map.of(
+                        "message",
+                        "Login OTP sent successfully"
+                )
+        );
 
-            e.printStackTrace();
+    } catch (RuntimeException e) {
 
-            return "Unable to send Login OTP. Please try again.";
-        }
+        return ResponseEntity
+                .badRequest()
+                .body(
+                        Map.of(
+                                "message",
+                  e.getMessage() != null
+                                        ? e.getMessage()
+                                        : "Unable to send Login OTP. Please try again."
+                        )
+                );
     }
+}
+
+
+    
+
 
     // =====================================================
     // FORGOT PASSWORD
