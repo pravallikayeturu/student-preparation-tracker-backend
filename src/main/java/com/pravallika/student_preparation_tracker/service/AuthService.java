@@ -11,8 +11,7 @@ import com.pravallika.student_preparation_tracker.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-@Service
-public class AuthService {
+@Service public class AuthService {
 
     private final UserRepository userRepository;
     private final OtpService otpService;
@@ -129,7 +128,7 @@ public class AuthService {
                             request.getEmail()
                     ).orElseThrow(() ->
                             new RuntimeException(
-                                    "User not found"
+                                    "User not registered. Please sign up frist."
                             )
                     );
 
@@ -173,11 +172,11 @@ public class AuthService {
         }
     }
 
-// =====================================================
-// VERIFY LOGIN PASSWORD BEFORE SENDING OTP
-// =====================================================
+        // =====================================================
+        // VERIFY LOGIN PASSWORD BEFORE SENDING OTP
+        // =====================================================
 
-public void verifyLoginPassword(
+        public void verifyLoginPassword(
         String email,
         String password) {
 
@@ -185,7 +184,7 @@ public void verifyLoginPassword(
             userRepository.findByEmail(email)
                     .orElseThrow(() ->
                             new RuntimeException(
-                                    "User not found"
+                                    "Please signup first , then login"
                             )
                     );
 
