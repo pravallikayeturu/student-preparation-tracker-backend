@@ -11,7 +11,8 @@ import com.pravallika.student_preparation_tracker.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-@Service public class AuthService {
+@Service
+public class AuthService {
 
     private final UserRepository userRepository;
     private final OtpService otpService;
@@ -38,8 +39,12 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String email = request.getEmail()
+                    .trim()
+                    .toLowerCase();
+
             boolean verified = otpService.verifyOtp(
-                    request.getEmail(),
+                    email,
                     request.getOtp()
             );
 
@@ -49,7 +54,7 @@ import org.springframework.stereotype.Service;
                 );
             }
 
-            if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            if (userRepository.findByEmail(email).isPresent()) {
                 throw new RuntimeException(
                         "Email already registered"
                 );
@@ -64,7 +69,7 @@ import org.springframework.stereotype.Service;
                             : request.getName().trim()
             );
 
-            user.setEmail(request.getEmail());
+            user.setEmail(email);
 
             user.setPassword(
                     passwordEncoder.encode(
@@ -79,9 +84,7 @@ import org.springframework.stereotype.Service;
             User savedUser =
                     userRepository.save(user);
 
-            otpService.deleteOtp(
-                    request.getEmail()
-            );
+            otpService.deleteOtp(email);
 
             return new AuthResponse(
                     savedUser.getId(),
@@ -112,8 +115,16 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String email = request.getEmail()
+                    .trim()
+                    .toLowerCase();
+
+            // ---------------------------------------------
+            // STEP 1: Verify OTP
+            // ---------------------------------------------
+
             boolean verified = otpService.verifyOtp(
-                    request.getEmail(),
+                    email,
                     request.getOtp()
             );
 
@@ -123,32 +134,49 @@ import org.springframework.stereotype.Service;
                 );
             }
 
+            // ---------------------------------------------
+            // STEP 2: Find registered user
+            // ---------------------------------------------
+
             User user =
-                    userRepository.findByEmail(
-                            request.getEmail()
-                    ).orElseThrow(() ->
-                            new RuntimeException(
-                                    "User not registered. Please sign up frist."
-                            )
-                    );
+                    userRepository.findByEmail(email)
+                            .orElseThrow(() ->
+                                    new RuntimeException(
+                                            "Please sign up first, then login."
+                                    )
+                            );
+
+            // ---------------------------------------------
+            // STEP 3: Verify password
+            // ---------------------------------------------
 
             if (!passwordEncoder.matches(
                     request.getPassword(),
                     user.getPassword())) {
 
                 throw new RuntimeException(
-                        "Invalid password"
+                        "Incorrect password"
                 );
             }
+
+            // ---------------------------------------------
+            // STEP 4: Generate JWT
+            // ---------------------------------------------
 
             String token =
                     jwtService.generateToken(
                             user.getEmail()
                     );
 
-            otpService.deleteOtp(
-                    request.getEmail()
-            );
+            // ---------------------------------------------
+            // STEP 5: Delete used OTP
+            // ---------------------------------------------
+
+            otpService.deleteOtp(email);
+
+            // ---------------------------------------------
+            // STEP 6: Return response
+            // ---------------------------------------------
 
             return new AuthResponse(
                     user.getId(),
@@ -172,32 +200,35 @@ import org.springframework.stereotype.Service;
         }
     }
 
-        // =====================================================
-        // VERIFY LOGIN PASSWORD BEFORE SENDING OTP
-        // =====================================================
+    // =====================================================
+    // VERIFY LOGIN PASSWORD BEFORE SENDING OTP
+    // =====================================================
 
-        public void verifyLoginPassword(
-        String email,
-        String password) {
+    public void verifyLoginPassword(
+            String email,
+            String password) {
 
-    User user =
-            userRepository.findByEmail(email)
-                    .orElseThrow(() ->
-                            new RuntimeException(
-                                    "Please signup first , then login"
-                            )
-                    );
+        String normalizedEmail = email
+                .trim()
+                .toLowerCase();
 
-    if (!passwordEncoder.matches(
-            password,
-            user.getPassword())) {
+        User user =
+                userRepository.findByEmail(normalizedEmail)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "Please sign up first, then login."
+                                )
+                        );
 
-        throw new RuntimeException(
-                "Incorrect password"
-        );
+        if (!passwordEncoder.matches(
+                password,
+                user.getPassword())) {
+
+            throw new RuntimeException(
+                    "Incorrect password"
+            );
+        }
     }
-}
-
 
     // =====================================================
     // RESET PASSWORD
@@ -208,8 +239,12 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String email = request.getEmail()
+                    .trim()
+                    .toLowerCase();
+
             boolean verified = otpService.verifyOtp(
-                    request.getEmail(),
+                    email,
                     request.getOtp()
             );
 
@@ -220,13 +255,12 @@ import org.springframework.stereotype.Service;
             }
 
             User user =
-                    userRepository.findByEmail(
-                            request.getEmail()
-                    ).orElseThrow(() ->
-                            new RuntimeException(
-                                    "User not found"
-                            )
-                    );
+                    userRepository.findByEmail(email)
+                            .orElseThrow(() ->
+                                    new RuntimeException(
+                                            "User not found"
+                                    )
+                            );
 
             if (request.getNewPassword() == null
                     || request.getNewPassword().length() < 6) {
@@ -244,9 +278,7 @@ import org.springframework.stereotype.Service;
 
             userRepository.save(user);
 
-            otpService.deleteOtp(
-                    request.getEmail()
-            );
+            otpService.deleteOtp(email);
 
             return new AuthResponse(
                     user.getId(),
@@ -280,8 +312,12 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String normalizedEmail = email
+                    .trim()
+                    .toLowerCase();
+
             User user =
-                    userRepository.findByEmail(email)
+                    userRepository.findByEmail(normalizedEmail)
                             .orElseThrow(() ->
                                     new RuntimeException(
                                             "User not found"
@@ -352,8 +388,12 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String normalizedEmail = email
+                    .trim()
+                    .toLowerCase();
+
             User user =
-                    userRepository.findByEmail(email)
+                    userRepository.findByEmail(normalizedEmail)
                             .orElseThrow(() ->
                                     new RuntimeException(
                                             "User not found"
@@ -394,8 +434,12 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String normalizedEmail = email
+                    .trim()
+                    .toLowerCase();
+
             User user =
-                    userRepository.findByEmail(email)
+                    userRepository.findByEmail(normalizedEmail)
                             .orElseThrow(() ->
                                     new RuntimeException(
                                             "User not found"
@@ -448,8 +492,12 @@ import org.springframework.stereotype.Service;
 
         try {
 
+            String normalizedEmail = email
+                    .trim()
+                    .toLowerCase();
+
             User user =
-                    userRepository.findByEmail(email)
+                    userRepository.findByEmail(normalizedEmail)
                             .orElseThrow(() ->
                                     new RuntimeException(
                                             "User not found"
