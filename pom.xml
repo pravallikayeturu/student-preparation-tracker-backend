@@ -218,6 +218,15 @@
     <version>2.31.63</version>
             </dependency>
 
+            <!-- =================================================
+     WEB PUSH NOTIFICATIONS
+================================================== -->
+
+<dependency>
+    <groupId>nl.martijndwars</groupId>
+    <artifactId>web-push</artifactId>
+    <version>5.1.1</version>
+</dependency>
 
     </dependencies>
 

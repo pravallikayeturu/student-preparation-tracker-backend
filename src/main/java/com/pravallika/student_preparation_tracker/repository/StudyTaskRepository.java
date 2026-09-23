@@ -1,4 +1,3 @@
-
 package com.pravallika.student_preparation_tracker.repository;
 
 import com.pravallika.student_preparation_tracker.entity.StudyTask;
@@ -57,8 +56,8 @@ public interface StudyTaskRepository
 
 
     // =========================================
-    // FIND TODAY'S ORIGINAL TASKS
-    // WHOSE REMINDER HAS NOT BEEN SENT
+    // EXISTING EMAIL REMINDER QUERY
+    // DO NOT REMOVE
     // =========================================
 
     List<StudyTask>
@@ -84,5 +83,18 @@ public interface StudyTaskRepository
     List<StudyTask> findByUserEmailAndRecurrenceType(
             String userEmail,
             String recurrenceType
+    );
+
+
+    // =========================================
+    // NEW:
+    // GET ALL TASKS
+    //
+    // We will calculate the actual occurrence
+    // date inside NotificationService.
+    // =========================================
+
+    List<StudyTask> findByOriginalReadingDateLessThanEqual(
+            LocalDate date
     );
 }

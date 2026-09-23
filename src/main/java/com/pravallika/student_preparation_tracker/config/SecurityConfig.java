@@ -44,13 +44,20 @@ public class SecurityConfig {
             // CORS
             // -------------------------------------------------
 
-                    .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .cors(cors ->
+                cors.configurationSource(
+                    corsConfigurationSource()
+                )
+            )
+
 
             // -------------------------------------------------
             // CSRF
             // -------------------------------------------------
 
-            .csrf(csrf -> csrf.disable())
+            .csrf(csrf ->
+                csrf.disable()
+            )
 
 
             // -------------------------------------------------
@@ -69,6 +76,7 @@ public class SecurityConfig {
             // -------------------------------------------------
 
             .authorizeHttpRequests(auth -> auth
+
 
                 // =================================================
                 // CORS PREFLIGHT
@@ -112,13 +120,25 @@ public class SecurityConfig {
                     "/api/tasks/**"
                 ).authenticated()
 
-                    // =================================================
-// SETTINGS
-// =================================================
 
-.requestMatchers(
-    "/api/settings/**"
-).authenticated()
+                // =================================================
+                // PUSH SUBSCRIPTIONS
+                // =================================================
+
+                .requestMatchers(
+                    "/api/push-subscriptions/**"
+                ).authenticated()
+
+
+                // =================================================
+                // SETTINGS
+                // =================================================
+
+                .requestMatchers(
+                    "/api/settings/**"
+                ).authenticated()
+
+
                 // =================================================
                 // FILES
                 // =================================================
@@ -163,9 +183,10 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(
             List.of(
-                        
-                        "http://localhost:5173",
-        "https://student-preparation-tracker-fronten.vercel.app"
+
+                "http://localhost:5173",
+
+                "https://student-preparation-tracker-fronten.vercel.app"
 
             )
         );
@@ -173,27 +194,33 @@ public class SecurityConfig {
 
         configuration.setAllowedMethods(
             List.of(
+
                 "GET",
                 "POST",
                 "PUT",
                 "DELETE",
                 "PATCH",
                 "OPTIONS"
+
             )
         );
 
 
         configuration.setAllowedHeaders(
             List.of(
+
                 "Authorization",
                 "Content-Type",
                 "Accept",
                 "Origin"
+
             )
         );
 
 
-        configuration.setAllowCredentials(true);
+        configuration.setAllowCredentials(
+            true
+        );
 
 
         UrlBasedCorsConfigurationSource source =

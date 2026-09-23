@@ -23,6 +23,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final BrevoEmailService brevoEmailService;
     private final UserRepository userRepository;
+    private final WebPushService webPushService;
 
     // =====================================================
     // CONSTRUCTOR
@@ -32,12 +33,14 @@ public class NotificationService {
             StudyTaskRepository studyTaskRepository,
             NotificationRepository notificationRepository,
             BrevoEmailService brevoEmailService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            WebPushService webPushService) {
 
         this.studyTaskRepository = studyTaskRepository;
         this.notificationRepository = notificationRepository;
         this.brevoEmailService = brevoEmailService;
         this.userRepository = userRepository;
+        this.webPushService = webPushService;
     }
 
     // =====================================================
@@ -114,6 +117,7 @@ public class NotificationService {
             // TASK REMINDERS OFF
             // NO IN-APP REMINDER
             // NO EMAIL
+            // NO PUSH
             // =================================================
 
             if (!Boolean.TRUE.equals(
@@ -177,6 +181,32 @@ public class NotificationService {
                 // =================================================
 
                 createStudyNotification(task);
+
+                // =================================================
+                // SEND BROWSER PUSH NOTIFICATION
+                // =================================================
+
+                try {
+
+                    webPushService.sendPushNotification(
+                            task.getUserEmail(),
+                            "Study Reminder",
+                            "Your study task \""
+                                    + task.getSubject()
+                                    + "\" starts in 10 minutes."
+                    );
+
+                    System.out.println(
+                            "Study reminder push notification sent."
+                    );
+
+                } catch (Exception pushException) {
+
+                    System.err.println(
+                            "Push notification sending failed: "
+                                    + pushException.getMessage()
+                    );
+                }
 
                 // =================================================
                 // SEND EMAIL
@@ -469,13 +499,42 @@ public class NotificationService {
                 );
 
                 notificationRepository.save(
-                        notification
-                );
+        notification
+);
 
-                System.out.println(
-                        "========================================"
-                );
+// =================================================
+// SEND BROWSER PUSH NOTIFICATION
+// =================================================
 
+try {
+
+    webPushService.sendPushNotification(
+            task.getUserEmail(),
+            "Deadline Reminder",
+            "Your task \""
+                    + task.getSubject()
+                    + "\" is due on "
+                    + formatDeadline(
+                            task.getDeadline()
+                    )
+                    + "."
+    );
+
+    System.out.println(
+            "Deadline push notification sent."
+    );
+
+} catch (Exception pushException) {
+
+    System.err.println(
+            "Deadline push notification failed: "
+                    + pushException.getMessage()
+    );
+}
+
+System.out.println(
+        "========================================"
+);
                 System.out.println(
                         "DEADLINE NOTIFICATION CREATED"
                 );
