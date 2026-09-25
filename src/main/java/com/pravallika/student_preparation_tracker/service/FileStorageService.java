@@ -24,22 +24,23 @@ public class FileStorageService {
 
     // =====================================================
     // SUPABASE STORAGE CONFIGURATION
+    // Values come from application.properties
     // =====================================================
 
-    private static final String S3_ENDPOINT =
-            "https://yipzkzilvrfpsucjnjhe.storage.supabase.co/storage/v1/s3";
+    @Value("${supabase.s3.endpoint}")
+    private String s3Endpoint;
 
-    private static final String S3_REGION =
-            "ap-southeast-2";
+    @Value("${supabase.s3.region}")
+    private String s3Region;
 
-    private static final String ACCESS_KEY =
-            "68c5237b997e7f822f5fc7cf0adbd7c7";
+    @Value("${supabase.s3.access-key}")
+    private String accessKey;
 
-    private static final String SECRET_KEY =
-            "cf3253e73c4aff2a2b88bfc122f444d4303887f7dd2effe1d07216fb496e05b2";
+    @Value("${supabase.s3.secret-key}")
+    private String secretKey;
 
-    private static final String BUCKET =
-            "study_files";
+    @Value("${supabase.bucket}")
+    private String bucket;
 
 
     private S3Client s3Client;
@@ -55,17 +56,17 @@ public class FileStorageService {
 
             AwsBasicCredentials credentials =
                     AwsBasicCredentials.create(
-                            ACCESS_KEY,
-                            SECRET_KEY
+                            accessKey,
+                            secretKey
                     );
 
             s3Client =
                     S3Client.builder()
                             .region(
-                                    Region.of(S3_REGION)
+                                    Region.of(s3Region)
                             )
                             .endpointOverride(
-                                    URI.create(S3_ENDPOINT)
+                                    URI.create(s3Endpoint)
                             )
                             .credentialsProvider(
                                     StaticCredentialsProvider.create(
@@ -128,12 +129,17 @@ public class FileStorageService {
 
             System.out.println(
                     "Supabase bucket: "
-                            + BUCKET
+                            + bucket
             );
 
             System.out.println(
                     "Supabase S3 endpoint: "
-                            + S3_ENDPOINT
+                            + s3Endpoint
+            );
+
+            System.out.println(
+                    "Supabase S3 region: "
+                            + s3Region
             );
 
 
@@ -143,7 +149,7 @@ public class FileStorageService {
 
             PutObjectRequest request =
                     PutObjectRequest.builder()
-                            .bucket(BUCKET)
+                            .bucket(bucket)
                             .key(storedFileName)
                             .contentType(
                                     file.getContentType() != null
@@ -206,7 +212,7 @@ public class FileStorageService {
 
             GetObjectRequest request =
                     GetObjectRequest.builder()
-                            .bucket(BUCKET)
+                            .bucket(bucket)
                             .key(filePath)
                             .build();
 
@@ -249,7 +255,7 @@ public class FileStorageService {
 
             DeleteObjectRequest request =
                     DeleteObjectRequest.builder()
-                            .bucket(BUCKET)
+                            .bucket(bucket)
                             .key(filePath)
                             .build();
 

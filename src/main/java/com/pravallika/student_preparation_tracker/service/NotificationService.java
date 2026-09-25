@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -24,6 +25,13 @@ public class NotificationService {
     private final BrevoEmailService brevoEmailService;
     private final UserRepository userRepository;
     private final WebPushService webPushService;
+
+    // =====================================================
+    // INDIA TIMEZONE
+    // =====================================================
+
+    private static final ZoneId INDIA_ZONE =
+            ZoneId.of("Asia/Kolkata");
 
     // =====================================================
     // CONSTRUCTOR
@@ -52,11 +60,20 @@ public class NotificationService {
     @Transactional
     public void checkUpcomingTasks() {
 
-        LocalDateTime now = LocalDateTime.now();
+        // IMPORTANT:
+        // Render server may use UTC.
+        // Your task times are entered in India time.
+        // So we explicitly use Asia/Kolkata here.
+
+        LocalDateTime now =
+                LocalDateTime.now(INDIA_ZONE);
+
+        LocalDate today =
+                LocalDate.now(INDIA_ZONE);
 
         System.out.println();
         System.out.println("========== NOTIFICATION CHECK ==========");
-        System.out.println("Current time: " + now);
+        System.out.println("Current India time: " + now);
 
         // =====================================================
         // 1. CHECK STUDY REMINDERS
@@ -65,7 +82,7 @@ public class NotificationService {
         List<StudyTask> tasks =
                 studyTaskRepository
                         .findByOriginalReadingDateAndReminderSentFalse(
-                                LocalDate.now()
+                                today
                         );
 
         System.out.println(
@@ -115,9 +132,6 @@ public class NotificationService {
 
             // =================================================
             // TASK REMINDERS OFF
-            // NO IN-APP REMINDER
-            // NO EMAIL
-            // NO PUSH
             // =================================================
 
             if (!Boolean.TRUE.equals(
@@ -131,16 +145,28 @@ public class NotificationService {
                 continue;
             }
 
+            // =================================================
+            // ORIGINAL START DATE + TIME
+            // =================================================
+
             LocalDateTime originalStartDateTime =
                     LocalDateTime.of(
                             task.getOriginalReadingDate(),
                             task.getOriginalStartTime()
                     );
 
+            // =================================================
+            // CURRENT INDIA TIME - MINUTE PRECISION
+            // =================================================
+
             LocalDateTime currentMinute =
                     now.truncatedTo(
                             ChronoUnit.MINUTES
                     );
+
+            // =================================================
+            // CALCULATE MINUTES UNTIL ORIGINAL START
+            // =================================================
 
             long minutesUntilStart =
                     ChronoUnit.MINUTES.between(
@@ -163,7 +189,7 @@ public class NotificationService {
 
             // =================================================
             // STUDY REMINDER
-            // 10 MINUTES BEFORE START
+            // 10 MINUTES BEFORE ORIGINAL START TIME
             // =================================================
 
             if (minutesUntilStart <= 10
@@ -177,7 +203,6 @@ public class NotificationService {
 
                 // =================================================
                 // CREATE IN-APP NOTIFICATION
-                // TASK REMINDERS = ON
                 // =================================================
 
                 createStudyNotification(task);
@@ -336,7 +361,7 @@ public class NotificationService {
             );
 
             // =================================================
-            // COPY DEADLINE FROM CREATE TASK
+            // COPY DEADLINE
             // =================================================
 
             notification.setDeadline(
@@ -345,8 +370,11 @@ public class NotificationService {
 
             notification.setRead(false);
 
+            // IMPORTANT:
+            // Save notification creation time in India time.
+
             notification.setCreatedAt(
-                    LocalDateTime.now()
+                    LocalDateTime.now(INDIA_ZONE)
             );
 
             notificationRepository.save(
@@ -382,8 +410,11 @@ public class NotificationService {
             List<StudyTask> allTasks =
                     studyTaskRepository.findAll();
 
+            // IMPORTANT:
+            // Use India date instead of server date.
+
             LocalDate today =
-                    LocalDate.now();
+                    LocalDate.now(INDIA_ZONE);
 
             for (StudyTask task : allTasks) {
 
@@ -417,7 +448,6 @@ public class NotificationService {
 
                 // =================================================
                 // TASK REMINDERS OFF
-                // NO DEADLINE REMINDER
                 // =================================================
 
                 if (!Boolean.TRUE.equals(
@@ -485,7 +515,7 @@ public class NotificationService {
                 );
 
                 // =================================================
-                // COPY CREATE TASK DEADLINE
+                // COPY DEADLINE
                 // =================================================
 
                 notification.setDeadline(
@@ -494,47 +524,55 @@ public class NotificationService {
 
                 notification.setRead(false);
 
+                // IMPORTANT:
+                // Save creation time in India time.
+
                 notification.setCreatedAt(
-                        LocalDateTime.now()
+                        LocalDateTime.now(INDIA_ZONE)
                 );
 
                 notificationRepository.save(
-        notification
-);
+                        notification
+                );
 
-// =================================================
-// SEND BROWSER PUSH NOTIFICATION
-// =================================================
+                // =================================================
+                // SEND BROWSER PUSH NOTIFICATION
+                // =================================================
 
-try {
+                try {
 
-    webPushService.sendPushNotification(
-            task.getUserEmail(),
-            "Deadline Reminder",
-            "Your task \""
-                    + task.getSubject()
-                    + "\" is due on "
-                    + formatDeadline(
-                            task.getDeadline()
-                    )
-                    + "."
-    );
+                    webPushService.sendPushNotification(
+                            task.getUserEmail(),
+                            "Deadline Reminder",
+                            "Your task \""
+                                    + task.getSubject()
+                                    + "\" is due on "
+                                    + formatDeadline(
+                                            task.getDeadline()
+                                    )
+                                    + "."
+                    );
 
-    System.out.println(
-            "Deadline push notification sent."
-    );
+                    System.out.println(
+                            "Deadline push notification sent."
+                    );
 
-} catch (Exception pushException) {
+                } catch (Exception pushException) {
 
-    System.err.println(
-            "Deadline push notification failed: "
-                    + pushException.getMessage()
-    );
-}
+                    System.err.println(
+                            "Deadline push notification failed: "
+                                    + pushException.getMessage()
+                    );
+                }
 
-System.out.println(
-        "========================================"
-);
+                // =================================================
+                // LOG DEADLINE NOTIFICATION
+                // =================================================
+
+                System.out.println(
+                        "========================================"
+                );
+
                 System.out.println(
                         "DEADLINE NOTIFICATION CREATED"
                 );
