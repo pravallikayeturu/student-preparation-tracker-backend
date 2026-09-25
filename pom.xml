@@ -222,10 +222,23 @@
      WEB PUSH NOTIFICATIONS
 ================================================== -->
 
-<dependency>
+            <dependency>
     <groupId>nl.martijndwars</groupId>
     <artifactId>web-push</artifactId>
-    <version>5.1.1</version>
+    <version>5.1.2</version>
+</dependency>
+
+<!-- Bouncy Castle required by Web Push -->
+<dependency>
+    <groupId>org.bouncycastle</groupId>
+    <artifactId>bcprov-jdk18on</artifactId>
+    <version>1.85.2</version>
+</dependency>
+    <!-- jose4j required by Web Push -->
+<dependency>
+    <groupId>org.bitbucket.b_c</groupId>
+    <artifactId>jose4j</artifactId>
+    <version>0.9.6</version>
 </dependency>
 
     </dependencies>
