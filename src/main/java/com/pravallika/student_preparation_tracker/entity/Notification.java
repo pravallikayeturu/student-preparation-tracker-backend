@@ -64,10 +64,27 @@ public class Notification {
 
     // =========================================
     // DEADLINE
-    // Deadline entered while creating the task
     // =========================================
 
     private LocalDate deadline;
+
+    // =========================================
+    // OCCURRENCE DATE
+    //
+    // Important for recurring tasks.
+    //
+    // Example:
+    //
+    // DAILY task
+    // Sep 25 -> occurrenceDate = Sep 25
+    // Sep 26 -> occurrenceDate = Sep 26
+    //
+    // WEEKLY task
+    // Sep 25 -> occurrenceDate = Sep 25
+    // Oct 02 -> occurrenceDate = Oct 02
+    // =========================================
+
+    private LocalDate occurrenceDate;
 
     // =========================================
     // CONSTRUCTOR
@@ -199,5 +216,17 @@ public class Notification {
 
     public void setDeadline(LocalDate deadline) {
         this.deadline = deadline;
+    }
+
+    // =========================================
+    // GET OCCURRENCE DATE
+    // =========================================
+
+    public LocalDate getOccurrenceDate() {
+        return occurrenceDate;
+    }
+
+    public void setOccurrenceDate(LocalDate occurrenceDate) {
+        this.occurrenceDate = occurrenceDate;
     }
 }

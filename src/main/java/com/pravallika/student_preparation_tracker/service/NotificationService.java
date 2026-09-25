@@ -2,8 +2,11 @@ package com.pravallika.student_preparation_tracker.service;
 
 import com.pravallika.student_preparation_tracker.entity.Notification;
 import com.pravallika.student_preparation_tracker.entity.StudyTask;
+import com.pravallika.student_preparation_tracker.entity.StudyTaskOccurrence;
 import com.pravallika.student_preparation_tracker.entity.User;
+
 import com.pravallika.student_preparation_tracker.repository.NotificationRepository;
+import com.pravallika.student_preparation_tracker.repository.StudyTaskOccurrenceRepository;
 import com.pravallika.student_preparation_tracker.repository.StudyTaskRepository;
 import com.pravallika.student_preparation_tracker.repository.UserRepository;
 
@@ -13,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -21,17 +25,15 @@ import java.util.List;
 public class NotificationService {
 
     private final StudyTaskRepository studyTaskRepository;
+    private final StudyTaskOccurrenceRepository occurrenceRepository;
     private final NotificationRepository notificationRepository;
     private final BrevoEmailService brevoEmailService;
     private final UserRepository userRepository;
     private final WebPushService webPushService;
 
-    // =====================================================
-    // INDIA TIMEZONE
-    // =====================================================
-
     private static final ZoneId INDIA_ZONE =
             ZoneId.of("Asia/Kolkata");
+
 
     // =====================================================
     // CONSTRUCTOR
@@ -39,20 +41,23 @@ public class NotificationService {
 
     public NotificationService(
             StudyTaskRepository studyTaskRepository,
+            StudyTaskOccurrenceRepository occurrenceRepository,
             NotificationRepository notificationRepository,
             BrevoEmailService brevoEmailService,
             UserRepository userRepository,
             WebPushService webPushService) {
 
         this.studyTaskRepository = studyTaskRepository;
+        this.occurrenceRepository = occurrenceRepository;
         this.notificationRepository = notificationRepository;
         this.brevoEmailService = brevoEmailService;
         this.userRepository = userRepository;
         this.webPushService = webPushService;
     }
 
+
     // =====================================================
-    // CHECK UPCOMING TASKS
+    // CHECK UPCOMING STUDY TASKS
     // RUNS EVERY MINUTE
     // =====================================================
 
@@ -60,35 +65,53 @@ public class NotificationService {
     @Transactional
     public void checkUpcomingTasks() {
 
-        // IMPORTANT:
-        // Render server may use UTC.
-        // Your task times are entered in India time.
-        // So we explicitly use Asia/Kolkata here.
-
         LocalDateTime now =
                 LocalDateTime.now(INDIA_ZONE);
 
         LocalDate today =
-                LocalDate.now(INDIA_ZONE);
+                now.toLocalDate();
+
+        LocalDateTime currentMinute =
+                now.truncatedTo(ChronoUnit.MINUTES);
+
 
         System.out.println();
-        System.out.println("========== NOTIFICATION CHECK ==========");
-        System.out.println("Current India time: " + now);
-
-        // =====================================================
-        // 1. CHECK STUDY REMINDERS
-        // =====================================================
-
-        List<StudyTask> tasks =
-                studyTaskRepository
-                        .findByOriginalReadingDateAndReminderSentFalse(
-                                today
-                        );
+        System.out.println(
+                "========== NOTIFICATION CHECK =========="
+        );
 
         System.out.println(
-                "Pending study reminder tasks: "
-                        + tasks.size()
+                "Current India time: " + now
         );
+
+
+        // =================================================
+        // GET ALL TASKS
+        // =================================================
+
+        List<StudyTask> tasks =
+                studyTaskRepository.findAll();
+
+        if (tasks == null || tasks.isEmpty()) {
+
+            System.out.println(
+                    "No study tasks found."
+            );
+
+            createDeadlineNotifications();
+
+            return;
+        }
+
+
+        System.out.println(
+                "Total study tasks: " + tasks.size()
+        );
+
+
+        // =================================================
+        // CHECK EACH TASK
+        // =================================================
 
         for (StudyTask task : tasks) {
 
@@ -96,250 +119,168 @@ public class NotificationService {
                 continue;
             }
 
-            if (task.getOriginalReadingDate() == null
-                    || task.getOriginalStartTime() == null
-                    || task.getUserEmail() == null
-                    || task.getUserEmail().trim().isEmpty()) {
 
-                System.out.println(
-                        "Skipping task ID "
-                                + task.getId()
-                                + " because required information is missing."
-                );
+            // -------------------------------------------------
+            // USER EMAIL
+            // -------------------------------------------------
+
+            String userEmail =
+                    task.getUserEmail();
+
+            if (userEmail == null
+                    || userEmail.trim().isEmpty()) {
 
                 continue;
             }
 
-            // =================================================
-            // GET USER SETTINGS
-            // =================================================
+
+            // -------------------------------------------------
+            // FIND USER
+            // -------------------------------------------------
 
             User user =
                     userRepository
-                            .findByEmail(task.getUserEmail())
+                            .findByEmail(userEmail)
                             .orElse(null);
 
             if (user == null) {
 
                 System.out.println(
-                        "Skipping task ID "
+                        "User not found for task ID: "
                                 + task.getId()
-                                + " because user was not found."
                 );
 
                 continue;
             }
 
-            // =================================================
-            // TASK REMINDERS OFF
-            // =================================================
+
+            // -------------------------------------------------
+            // TASK REMINDERS SETTING
+            // -------------------------------------------------
 
             if (!Boolean.TRUE.equals(
                     user.isTaskReminders())) {
 
-                System.out.println(
-                        "Task reminders are OFF for user: "
-                                + task.getUserEmail()
-                );
+                continue;
+            }
+
+
+            // -------------------------------------------------
+            // FIND TODAY'S OCCURRENCE
+            // -------------------------------------------------
+
+            StudyTaskOccurrence occurrence =
+                    occurrenceRepository
+                            .findByStudyTaskIdAndOccurrenceDate(
+                                    task.getId(),
+                                    today
+                            )
+                            .orElse(null);
+
+            if (occurrence == null) {
+                continue;
+            }
+
+
+            // -------------------------------------------------
+            // COMPLETED OCCURRENCE
+            // -------------------------------------------------
+
+            if ("COMPLETED".equalsIgnoreCase(
+                    occurrence.getStatus())) {
 
                 continue;
             }
 
-            // =================================================
-            // ORIGINAL START DATE + TIME
-            // =================================================
 
-            LocalDateTime originalStartDateTime =
+            // -------------------------------------------------
+            // REMINDER ALREADY SENT
+            // -------------------------------------------------
+
+            if (occurrence.isReminderSent()) {
+
+                continue;
+            }
+
+
+            // -------------------------------------------------
+            // START TIME
+            // -------------------------------------------------
+
+            LocalTime startTime =
+                    occurrence.getStartTime();
+
+            if (startTime == null) {
+                continue;
+            }
+
+
+            // -------------------------------------------------
+            // OCCURRENCE START
+            // -------------------------------------------------
+
+            LocalDateTime occurrenceStart =
                     LocalDateTime.of(
-                            task.getOriginalReadingDate(),
-                            task.getOriginalStartTime()
+                            occurrence.getOccurrenceDate(),
+                            startTime
                     );
 
-            // =================================================
-            // CURRENT INDIA TIME - MINUTE PRECISION
-            // =================================================
 
-            LocalDateTime currentMinute =
-                    now.truncatedTo(
-                            ChronoUnit.MINUTES
-                    );
-
-            // =================================================
-            // CALCULATE MINUTES UNTIL ORIGINAL START
-            // =================================================
+            // -------------------------------------------------
+            // MINUTES UNTIL START
+            // -------------------------------------------------
 
             long minutesUntilStart =
                     ChronoUnit.MINUTES.between(
                             currentMinute,
-                            originalStartDateTime
+                            occurrenceStart
                     );
+
 
             System.out.println(
                     "Task ID: "
                             + task.getId()
                             + " | Subject: "
                             + task.getSubject()
+                            + " | Date: "
+                            + occurrence.getOccurrenceDate()
                             + " | Start: "
-                            + originalStartDateTime
-                            + " | Minutes until start: "
+                            + occurrence.getStartTime()
+                            + " | Minutes Until Start: "
                             + minutesUntilStart
-                            + " | Deadline: "
-                            + task.getDeadline()
             );
 
-            // =================================================
-            // STUDY REMINDER
-            // 10 MINUTES BEFORE ORIGINAL START TIME
-            // =================================================
-
-            if (minutesUntilStart <= 10
-                    && minutesUntilStart >= 0
-                    && !task.isReminderSent()) {
-
-                System.out.println(
-                        "Creating study reminder for task ID: "
-                                + task.getId()
-                );
-
-                // =================================================
-                // CREATE IN-APP NOTIFICATION
-                // =================================================
-
-                createStudyNotification(task);
-
-                // =================================================
-                // SEND BROWSER PUSH NOTIFICATION
-                // =================================================
-
-                try {
-
-                    webPushService.sendPushNotification(
-                            task.getUserEmail(),
-                            "Study Reminder",
-                            "Your study task \""
-                                    + task.getSubject()
-                                    + "\" starts in 10 minutes."
-                    );
-
-                    System.out.println(
-                            "Study reminder push notification sent."
-                    );
-
-                } catch (Exception pushException) {
-
-                    System.err.println(
-                            "Push notification sending failed: "
-                                    + pushException.getMessage()
-                    );
-                }
-
-                // =================================================
-                // SEND EMAIL
-                // ONLY IF EMAIL NOTIFICATIONS = ON
-                // =================================================
-
-                if (Boolean.TRUE.equals(
-                        user.isEmailNotifications())) {
-
-                    try {
-
-                        brevoEmailService.sendStudyReminder(
-                                task.getUserEmail(),
-                                task.getSubject(),
-                                task.getTopic(),
-                                task.getOriginalReadingDate(),
-                                task.getOriginalStartTime(),
-                                task.getOriginalEndTime()
-                        );
-
-                        System.out.println(
-                                "Study reminder email sent successfully."
-                        );
-
-                    } catch (Exception emailException) {
-
-                        System.err.println(
-                                "Email sending failed: "
-                                        + emailException.getMessage()
-                        );
-                    }
-
-                } else {
-
-                    System.out.println(
-                            "Email notifications are OFF. "
-                                    + "Study reminder email not sent."
-                    );
-                }
-
-                // =================================================
-                // MARK STUDY REMINDER AS SENT
-                // =================================================
-
-                task.setReminderSent(true);
-
-                studyTaskRepository.save(task);
-
-                System.out.println(
-                        "Study reminder marked as sent for task ID: "
-                                + task.getId()
-                );
-            }
-        }
-
-        // =====================================================
-        // 2. CHECK DEADLINE NOTIFICATIONS
-        // =====================================================
-
-        createDeadlineNotifications();
-
-        System.out.println(
-                "========== NOTIFICATION CHECK COMPLETE =========="
-        );
-
-        System.out.println();
-    }
-
-    // =====================================================
-    // CREATE STUDY NOTIFICATION
-    // =====================================================
-
-    private void createStudyNotification(
-            StudyTask task) {
-
-        try {
 
             // =================================================
-            // CHECK DUPLICATE STUDY NOTIFICATION
+            // REMINDER WINDOW
             // =================================================
+            //
+            // Scheduler runs every minute.
+            //
+            // Example:
+            // 5:49 -> 11 minutes -> skip
+            // 5:50 -> 10 minutes -> send
+            // 5:51 -> 9 minutes  -> send only if not already sent
+            //
+            // Once sent, occurrence.reminderSent becomes true.
+            //
 
-            boolean alreadyExists =
-                    notificationRepository
-                            .existsByUserEmailAndStudyTaskIdAndType(
-                                    task.getUserEmail(),
-                                    task.getId(),
-                                    "study"
-                            );
+            if (minutesUntilStart > 10
+                    || minutesUntilStart < 0) {
 
-            if (alreadyExists) {
-
-                System.out.println(
-                        "Study notification already exists for task ID: "
-                                + task.getId()
-                );
-
-                return;
+                continue;
             }
 
+
             // =================================================
-            // CREATE NOTIFICATION
+            // CREATE IN-APP NOTIFICATION
             // =================================================
 
             Notification notification =
                     new Notification();
 
             notification.setUserEmail(
-                    task.getUserEmail()
+                    userEmail
             );
 
             notification.setType(
@@ -360,61 +301,160 @@ public class NotificationService {
                     task.getId()
             );
 
-            // =================================================
-            // COPY DEADLINE
-            // =================================================
-
             notification.setDeadline(
                     task.getDeadline()
             );
 
             notification.setRead(false);
 
-            // IMPORTANT:
-            // Save notification creation time in India time.
-
             notification.setCreatedAt(
                     LocalDateTime.now(INDIA_ZONE)
             );
 
-            notificationRepository.save(
-                    notification
+
+            try {
+
+                notificationRepository.save(
+                        notification
+                );
+
+                System.out.println(
+                        "Study notification created successfully."
+                );
+
+            } catch (Exception notificationException) {
+
+                System.err.println(
+                        "Failed to create study notification: "
+                                + notificationException.getMessage()
+                );
+
+                /*
+                 * Do not mark the occurrence as reminded
+                 * if the in-app notification itself failed.
+                 */
+                continue;
+            }
+
+
+            // =================================================
+            // BROWSER PUSH
+            // =================================================
+
+            try {
+
+                webPushService.sendPushNotification(
+                        userEmail,
+                        "Study Reminder",
+                        "Your study task \""
+                                + task.getSubject()
+                                + "\" starts in 10 minutes."
+                );
+
+                System.out.println(
+                        "Study reminder push notification sent."
+                );
+
+            } catch (Exception pushException) {
+
+                System.err.println(
+                        "Push notification failed: "
+                                + pushException.getMessage()
+                );
+            }
+
+
+            // =================================================
+            // EMAIL
+            // =================================================
+
+            if (Boolean.TRUE.equals(
+                    user.isEmailNotifications())) {
+
+                try {
+
+                    brevoEmailService.sendStudyReminder(
+                            userEmail,
+                            task.getSubject(),
+                            task.getTopic(),
+                            occurrence.getOccurrenceDate(),
+                            occurrence.getStartTime(),
+                            occurrence.getEndTime()
+                    );
+
+                    System.out.println(
+                            "Study reminder email sent successfully."
+                    );
+
+                } catch (Exception emailException) {
+
+                    System.err.println(
+                            "Study reminder email failed: "
+                                    + emailException.getMessage()
+                    );
+                }
+
+            } else {
+
+                System.out.println(
+                        "Email notifications are OFF for user: "
+                                + userEmail
+                );
+            }
+
+
+            // =================================================
+            // MARK ONLY THIS OCCURRENCE AS REMINDED
+            // =================================================
+
+            occurrence.setReminderSent(true);
+
+            occurrenceRepository.save(
+                    occurrence
             );
 
             System.out.println(
-                    "Study notification created successfully."
+                    "Occurrence reminder marked as sent."
             );
-
-        } catch (Exception e) {
-
-            System.err.println(
-                    "Failed to create study notification."
-            );
-
-            e.printStackTrace();
         }
+
+
+        // =================================================
+        // DEADLINE NOTIFICATIONS
+        // =================================================
+
+        createDeadlineNotifications();
+
+
+        System.out.println(
+                "========== NOTIFICATION CHECK COMPLETE =========="
+        );
+
+        System.out.println();
     }
 
+
     // =====================================================
-    // CREATE DEADLINE NOTIFICATIONS
+    // DEADLINE NOTIFICATIONS
     // =====================================================
 
     private void createDeadlineNotifications() {
 
         try {
 
-            // =================================================
-            // GET ALL TASKS
-            // =================================================
-
             List<StudyTask> allTasks =
                     studyTaskRepository.findAll();
 
-            // IMPORTANT:
-            // Use India date instead of server date.
+            if (allTasks == null
+                    || allTasks.isEmpty()) {
+
+                return;
+            }
+
 
             LocalDate today =
                     LocalDate.now(INDIA_ZONE);
+
 
             for (StudyTask task : allTasks) {
 
@@ -422,33 +462,43 @@ public class NotificationService {
                     continue;
                 }
 
-                // =================================================
-                // REQUIRED INFORMATION
-                // =================================================
 
-                if (task.getDeadline() == null
-                        || task.getUserEmail() == null
-                        || task.getUserEmail().trim().isEmpty()) {
+                // -------------------------------------------------
+                // DEADLINE VALIDATION
+                // -------------------------------------------------
+
+                if (task.getDeadline() == null) {
+                    continue;
+                }
+
+
+                String userEmail =
+                        task.getUserEmail();
+
+                if (userEmail == null
+                        || userEmail.trim().isEmpty()) {
 
                     continue;
                 }
 
-                // =================================================
-                // GET USER
-                // =================================================
+
+                // -------------------------------------------------
+                // FIND USER
+                // -------------------------------------------------
 
                 User user =
                         userRepository
-                                .findByEmail(task.getUserEmail())
+                                .findByEmail(userEmail)
                                 .orElse(null);
 
                 if (user == null) {
                     continue;
                 }
 
-                // =================================================
+
+                // -------------------------------------------------
                 // TASK REMINDERS OFF
-                // =================================================
+                // -------------------------------------------------
 
                 if (!Boolean.TRUE.equals(
                         user.isTaskReminders())) {
@@ -456,14 +506,15 @@ public class NotificationService {
                     continue;
                 }
 
-                // =================================================
-                // ONLY CREATE DEADLINE NOTIFICATION
-                // ON THE DEADLINE DATE
-                // =================================================
+
+                // -------------------------------------------------
+                // DEADLINE IS NOT TODAY
+                // -------------------------------------------------
 
                 if (!task.getDeadline().equals(today)) {
                     continue;
                 }
+
 
                 // =================================================
                 // CHECK DUPLICATE
@@ -472,7 +523,7 @@ public class NotificationService {
                 boolean alreadyExists =
                         notificationRepository
                                 .existsByUserEmailAndStudyTaskIdAndType(
-                                        task.getUserEmail(),
+                                        userEmail,
                                         task.getId(),
                                         "deadline"
                                 );
@@ -481,15 +532,16 @@ public class NotificationService {
                     continue;
                 }
 
+
                 // =================================================
-                // CREATE DEADLINE NOTIFICATION
+                // CREATE IN-APP DEADLINE NOTIFICATION
                 // =================================================
 
                 Notification notification =
                         new Notification();
 
                 notification.setUserEmail(
-                        task.getUserEmail()
+                        userEmail
                 );
 
                 notification.setType(
@@ -503,20 +555,12 @@ public class NotificationService {
                 notification.setMessage(
                         "Your task \""
                                 + task.getSubject()
-                                + "\" is due on "
-                                + formatDeadline(
-                                        task.getDeadline()
-                                )
-                                + "."
+                                + "\" is due today."
                 );
 
                 notification.setStudyTaskId(
                         task.getId()
                 );
-
-                // =================================================
-                // COPY DEADLINE
-                // =================================================
 
                 notification.setDeadline(
                         task.getDeadline()
@@ -524,33 +568,40 @@ public class NotificationService {
 
                 notification.setRead(false);
 
-                // IMPORTANT:
-                // Save creation time in India time.
-
                 notification.setCreatedAt(
                         LocalDateTime.now(INDIA_ZONE)
                 );
 
-                notificationRepository.save(
-                        notification
-                );
+
+                try {
+
+                    notificationRepository.save(
+                            notification
+                    );
+
+                } catch (Exception notificationException) {
+
+                    System.err.println(
+                            "Failed to create deadline notification: "
+                                    + notificationException.getMessage()
+                    );
+
+                    continue;
+                }
+
 
                 // =================================================
-                // SEND BROWSER PUSH NOTIFICATION
+                // DEADLINE PUSH
                 // =================================================
 
                 try {
 
                     webPushService.sendPushNotification(
-                            task.getUserEmail(),
+                            userEmail,
                             "Deadline Reminder",
                             "Your task \""
                                     + task.getSubject()
-                                    + "\" is due on "
-                                    + formatDeadline(
-                                            task.getDeadline()
-                                    )
-                                    + "."
+                                    + "\" is due today."
                     );
 
                     System.out.println(
@@ -565,35 +616,58 @@ public class NotificationService {
                     );
                 }
 
+
                 // =================================================
-                // LOG DEADLINE NOTIFICATION
+                // DEADLINE EMAIL
                 // =================================================
+                //
+                // We use the existing Brevo study-reminder
+                // method so this service does not introduce
+                // a method that may not exist in your
+                // BrevoEmailService.
+                //
+
+                if (Boolean.TRUE.equals(
+                        user.isEmailNotifications())) {
+
+                    try {
+
+                        brevoEmailService.sendStudyReminder(
+                                userEmail,
+                                task.getSubject(),
+                                task.getTopic(),
+                                task.getReadingDate(),
+                                task.getStartTime(),
+                                task.getEndTime()
+                        );
+
+                        System.out.println(
+                                "Deadline email sent successfully."
+                        );
+
+                    } catch (Exception emailException) {
+
+                        System.err.println(
+                                "Deadline email failed: "
+                                        + emailException.getMessage()
+                        );
+                    }
+
+                } else {
+
+                    System.out.println(
+                            "Email notifications are OFF for user: "
+                                    + userEmail
+                    );
+                }
+
 
                 System.out.println(
-                        "========================================"
-                );
-
-                System.out.println(
-                        "DEADLINE NOTIFICATION CREATED"
-                );
-
-                System.out.println(
-                        "Task ID: "
+                        "DEADLINE NOTIFICATION CREATED | "
+                                + "Task ID: "
                                 + task.getId()
-                );
-
-                System.out.println(
-                        "Subject: "
-                                + task.getSubject()
-                );
-
-                System.out.println(
-                        "Deadline: "
-                                + task.getDeadline()
-                );
-
-                System.out.println(
-                        "========================================"
+                                + " | Date: "
+                                + today
                 );
             }
 
@@ -606,6 +680,7 @@ public class NotificationService {
             e.printStackTrace();
         }
     }
+
 
     // =====================================================
     // FORMAT DEADLINE
@@ -622,9 +697,9 @@ public class NotificationService {
                 .toString()
                 .substring(0, 1)
                 + deadline.getMonth()
-                        .toString()
-                        .substring(1)
-                        .toLowerCase()
+                .toString()
+                .substring(1)
+                .toLowerCase()
                 + " "
                 + deadline.getDayOfMonth();
     }

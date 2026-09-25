@@ -5,6 +5,7 @@ import com.pravallika.student_preparation_tracker.entity.StudyTaskOccurrence;
 import com.pravallika.student_preparation_tracker.repository.StudyTaskOccurrenceRepository;
 import com.pravallika.student_preparation_tracker.repository.StudyTaskRepository;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -24,8 +26,23 @@ import java.util.Set;
 public class StudyTaskService {
 
     private final StudyTaskRepository studyTaskRepository;
-
     private final StudyTaskOccurrenceRepository occurrenceRepository;
+
+    /*
+     * All task dates and times are handled using
+     * Indian Standard Time.
+     */
+    private static final ZoneId INDIA_ZONE =
+            ZoneId.of("Asia/Kolkata");
+
+    /*
+     * For recurring tasks without an end date,
+     * we maintain occurrences for the next 365 days.
+     *
+     * This allows reminders to work continuously without
+     * creating an infinite number of database rows.
+     */
+    private static final int ONGOING_RECURRENCE_DAYS = 365;
 
 
     // =====================================================
@@ -78,6 +95,7 @@ public class StudyTaskService {
             task.setStatus("PENDING");
         }
 
+
         // -------------------------------------------------
         // STORE ORIGINAL SCHEDULE
         // -------------------------------------------------
@@ -94,6 +112,12 @@ public class StudyTaskService {
                 task.getEndTime()
         );
 
+        /*
+         * Parent reminder flag is retained for compatibility.
+         *
+         * Actual recurring reminder tracking is done by
+         * StudyTaskOccurrence.reminderSent.
+         */
         task.setReminderSent(false);
 
 
@@ -121,7 +145,6 @@ public class StudyTaskService {
         // -------------------------------------------------
 
         generateOccurrences(savedTask);
-
 
         return savedTask;
     }
@@ -169,19 +192,6 @@ public class StudyTaskService {
             return occurrenceDates;
         }
 
-        LocalDate endDate =
-                task.getRecurrenceEndDate();
-
-        if (endDate == null) {
-            endDate = startDate;
-        }
-
-        if (endDate.isBefore(startDate)) {
-            throw new RuntimeException(
-                    "Recurrence end date cannot be before "
-                            + "the study start date."
-            );
-        }
 
         String recurrenceType =
                 task.getRecurrenceType();
@@ -207,6 +217,50 @@ public class StudyTaskService {
             occurrenceDates.add(startDate);
 
             return occurrenceDates;
+        }
+
+
+        // =================================================
+        // DETERMINE END DATE FOR RECURRING TASK
+        // =================================================
+
+        LocalDate endDate =
+                task.getRecurrenceEndDate();
+
+        /*
+         * If the user supplied an end date,
+         * use that exact date.
+         *
+         * If no end date was supplied, maintain a
+         * rolling one-year occurrence window.
+         */
+        if (endDate == null) {
+
+            endDate =
+                    LocalDate.now(INDIA_ZONE)
+                            .plusDays(
+                                    ONGOING_RECURRENCE_DAYS
+                            );
+
+            /*
+             * Never allow the generated range to end
+             * before the task's starting date.
+             */
+            if (endDate.isBefore(startDate)) {
+                endDate = startDate
+                        .plusDays(
+                                ONGOING_RECURRENCE_DAYS
+                        );
+            }
+        }
+
+
+        if (endDate.isBefore(startDate)) {
+
+            throw new RuntimeException(
+                    "Recurrence end date cannot be before "
+                            + "the study start date."
+            );
         }
 
 
@@ -307,6 +361,15 @@ public class StudyTaskService {
                 YearMonth yearMonth =
                         YearMonth.from(currentDate);
 
+                /*
+                 * Example:
+                 *
+                 * requestedDay = 31
+                 *
+                 * February -> 28/29
+                 * April    -> 30
+                 * June     -> 30
+                 */
                 int actualDay =
                         Math.min(
                                 requestedDay,
@@ -333,23 +396,14 @@ public class StudyTaskService {
 
 
         // =================================================
-        // CUSTOM
+        // CUSTOM NOT SUPPORTED
         // =================================================
 
         if (recurrenceType.equals("CUSTOM")) {
 
-            /*
-             * CUSTOM dates are expected to be supplied
-             * through recurrenceDates if your StudyTask
-             * entity contains that field.
-             *
-             * If your current entity does not contain
-             * recurrenceDates, CUSTOM should be handled
-             * separately in the controller/entity.
-             */
-
             throw new RuntimeException(
-                    "CUSTOM recurrence requires custom dates."
+                    "CUSTOM recurrence is not supported. "
+                            + "Use ONE_TIME, DAILY, WEEKLY or MONTHLY."
             );
         }
 
@@ -361,7 +415,7 @@ public class StudyTaskService {
         throw new RuntimeException(
                 "Invalid recurrence type. "
                         + "Allowed values are ONE_TIME, DAILY, "
-                        + "WEEKLY, MONTHLY or CUSTOM."
+                        + "WEEKLY or MONTHLY."
         );
     }
 
@@ -382,10 +436,6 @@ public class StudyTaskService {
         }
 
 
-        // -------------------------------------------------
-        // FIRST: SEARCH EXISTING OCCURRENCE
-        // -------------------------------------------------
-
         StudyTaskOccurrence existing =
                 occurrenceRepository
                         .findByStudyTaskIdAndOccurrenceDate(
@@ -395,27 +445,17 @@ public class StudyTaskService {
                         .orElse(null);
 
 
-        // -------------------------------------------------
-        // EXISTING ROW -> NEVER INSERT AGAIN
-        // -------------------------------------------------
-
+        /*
+         * Unique occurrence:
+         *
+         * task + date
+         *
+         * Never insert a duplicate.
+         */
         if (existing != null) {
-
-            /*
-             * IMPORTANT:
-             *
-             * Never call save(new StudyTaskOccurrence())
-             * when an occurrence for this task/date already
-             * exists.
-             */
-
             return;
         }
 
-
-        // -------------------------------------------------
-        // CREATE NEW OCCURRENCE
-        // -------------------------------------------------
 
         StudyTaskOccurrence occurrence =
                 new StudyTaskOccurrence();
@@ -438,14 +478,88 @@ public class StudyTaskService {
                 "PENDING"
         );
 
-        occurrence.setReminderSent(
-                false
-        );
+        /*
+         * Every occurrence has its own reminder state.
+         */
+        occurrence.setReminderSent(false);
 
 
         occurrenceRepository.save(
                 occurrence
         );
+    }
+
+
+    // =====================================================
+    // MAINTAIN ONGOING RECURRING OCCURRENCES
+    // =====================================================
+
+    /*
+     * Runs every day at approximately 12:05 AM IST.
+     *
+     * For recurring tasks without an end date,
+     * this extends the occurrence window forward.
+     *
+     * Existing occurrences are never duplicated.
+     */
+    @Scheduled(
+            cron = "0 5 0 * * *",
+            zone = "Asia/Kolkata"
+    )
+    public void maintainRecurringOccurrences() {
+
+        List<StudyTask> tasks =
+                studyTaskRepository.findAll();
+
+        if (tasks == null
+                || tasks.isEmpty()) {
+
+            return;
+        }
+
+        for (StudyTask task : tasks) {
+
+            if (task == null
+                    || task.getId() == null) {
+
+                continue;
+            }
+
+            String recurrenceType =
+                    task.getRecurrenceType();
+
+            if (recurrenceType == null
+                    || recurrenceType.trim().isEmpty()) {
+
+                continue;
+            }
+
+            recurrenceType =
+                    recurrenceType
+                            .trim()
+                            .toUpperCase();
+
+            /*
+             * Only recurring tasks need extension.
+             */
+            if (recurrenceType.equals("ONE_TIME")
+                    || recurrenceType.equals("CUSTOM")) {
+
+                continue;
+            }
+
+            /*
+             * If an explicit end date exists,
+             * all required occurrences were already
+             * generated according to that end date.
+             */
+            if (task.getRecurrenceEndDate() != null) {
+
+                continue;
+            }
+
+            generateOccurrences(task);
+        }
     }
 
 
@@ -576,8 +690,10 @@ public class StudyTaskService {
             );
         }
 
-        if (readingDate.isBefore(
-                LocalDate.now())) {
+        LocalDate today =
+                LocalDate.now(INDIA_ZONE);
+
+        if (readingDate.isBefore(today)) {
 
             throw new RuntimeException(
                     "You cannot create or move a study task "
@@ -745,22 +861,14 @@ public class StudyTaskService {
 
 
         // =================================================
-        // CUSTOM
+        // CUSTOM NOT SUPPORTED
         // =================================================
 
         if (recurrenceType.equals("CUSTOM")) {
 
-            /*
-             * CUSTOM recurrence validation depends on the
-             * custom-date field present in StudyTask.
-             *
-             * If your StudyTask currently does not contain
-             * a custom-date list, do not select CUSTOM yet.
-             */
-
             throw new RuntimeException(
-                    "CUSTOM recurrence is not configured "
-                            + "with custom dates in the StudyTask entity."
+                    "CUSTOM recurrence is not supported. "
+                            + "Use ONE_TIME, DAILY, WEEKLY or MONTHLY."
             );
         }
 
@@ -772,7 +880,7 @@ public class StudyTaskService {
         throw new RuntimeException(
                 "Invalid recurrence type. "
                         + "Allowed values are ONE_TIME, DAILY, "
-                        + "WEEKLY, MONTHLY or CUSTOM."
+                        + "WEEKLY or MONTHLY."
         );
     }
 
@@ -787,6 +895,9 @@ public class StudyTaskService {
         LocalDate recurrenceEndDate =
                 task.getRecurrenceEndDate();
 
+        /*
+         * Null means ongoing recurrence.
+         */
         if (recurrenceEndDate == null) {
             return;
         }
@@ -878,11 +989,6 @@ public class StudyTaskService {
                 recurrenceDays
                         .toUpperCase()
                         .split(",");
-
-        /*
-         * LinkedHashSet keeps the user's day order stable
-         * and removes duplicates.
-         */
 
         Set<String> uniqueDays =
                 new LinkedHashSet<>();
@@ -987,7 +1093,6 @@ public class StudyTaskService {
 
                 if (overlaps) {
 
-                    // NEW USER-FACING MESSAGE
                     throw new RuntimeException(
                             "Another task already exists at this time"
                     );
@@ -1074,10 +1179,6 @@ public class StudyTaskService {
         }
 
 
-        // -------------------------------------------------
-        // FIND EXISTING PARENT TASK
-        // -------------------------------------------------
-
         StudyTask existingTask =
                 studyTaskRepository
                         .findByIdAndUserEmail(
@@ -1090,10 +1191,6 @@ public class StudyTaskService {
                                 )
                         );
 
-
-        // -------------------------------------------------
-        // VALIDATE NEW DATA
-        // -------------------------------------------------
 
         validateBasicTaskDetails(
                 updatedTask
@@ -1168,7 +1265,7 @@ public class StudyTaskService {
 
 
         // -------------------------------------------------
-        // UPDATE PARENT TASK
+        // UPDATE PARENT
         // -------------------------------------------------
 
         existingTask.setSubject(
@@ -1220,10 +1317,6 @@ public class StudyTaskService {
         );
 
 
-        // -------------------------------------------------
-        // SAVE PARENT
-        // -------------------------------------------------
-
         StudyTask savedTask =
                 studyTaskRepository.save(
                         existingTask
@@ -1257,10 +1350,6 @@ public class StudyTaskService {
         }
 
 
-        // -------------------------------------------------
-        // GENERATE EXPECTED DATES
-        // -------------------------------------------------
-
         List<LocalDate> expectedDates =
                 generateOccurrenceDates(task);
 
@@ -1270,16 +1359,11 @@ public class StudyTaskService {
                 );
 
 
-        // -------------------------------------------------
-        // GET EXISTING OCCURRENCES
-        // -------------------------------------------------
-
         List<StudyTaskOccurrence> existingOccurrences =
                 occurrenceRepository
                         .findByStudyTaskIdOrderByOccurrenceDateAsc(
                                 task.getId()
                         );
-
 
         if (existingOccurrences == null) {
 
@@ -1289,11 +1373,11 @@ public class StudyTaskService {
 
 
         LocalDate today =
-                LocalDate.now();
+                LocalDate.now(INDIA_ZONE);
 
 
         // -------------------------------------------------
-        // UPDATE EXISTING OCCURRENCES
+        // UPDATE EXISTING FUTURE OCCURRENCES
         // -------------------------------------------------
 
         for (StudyTaskOccurrence occurrence :
@@ -1310,19 +1394,10 @@ public class StudyTaskService {
                     occurrence.getOccurrenceDate();
 
 
-            // ---------------------------------------------
-            // HISTORICAL OCCURRENCE
-            // ---------------------------------------------
-
             if (occurrenceDate.isBefore(today)) {
-
                 continue;
             }
 
-
-            // ---------------------------------------------
-            // COMPLETED OCCURRENCE
-            // ---------------------------------------------
 
             if ("COMPLETED".equalsIgnoreCase(
                     occurrence.getStatus())) {
@@ -1330,10 +1405,6 @@ public class StudyTaskService {
                 continue;
             }
 
-
-            // ---------------------------------------------
-            // DATE IS STILL PART OF NEW SERIES
-            // ---------------------------------------------
 
             if (expectedDateSet.contains(
                     occurrenceDate)) {
@@ -1346,70 +1417,26 @@ public class StudyTaskService {
                         task.getEndTime()
                 );
 
-                occurrence.setReminderSent(
-                        false
-                );
+                /*
+                 * Parent-series edit means the occurrence
+                 * has a new schedule, so its reminder can
+                 * be sent again for the new schedule.
+                 */
+                occurrence.setReminderSent(false);
 
                 occurrenceRepository.save(
                         occurrence
                 );
-
-                continue;
             }
-
-
-            /*
-             * ------------------------------------------------
-             * DATE IS NO LONGER PART OF NEW SERIES
-             * ------------------------------------------------
-             *
-             * We intentionally DO NOT DELETE it.
-             *
-             * This preserves historical/user data and avoids
-             * accidentally removing an occurrence that may
-             * already be referenced elsewhere.
-             */
         }
 
 
         // -------------------------------------------------
-        // CREATE ONLY MISSING OCCURRENCES
+        // CREATE MISSING OCCURRENCES
         // -------------------------------------------------
 
         for (LocalDate expectedDate :
                 expectedDates) {
-
-            /*
-             * Search AGAIN immediately before inserting.
-             *
-             * This is important because the database has a
-             * unique constraint on:
-             *
-             * study_task_id + occurrence_date
-             */
-
-            StudyTaskOccurrence existing =
-                    occurrenceRepository
-                            .findByStudyTaskIdAndOccurrenceDate(
-                                    task.getId(),
-                                    expectedDate
-                            )
-                            .orElse(null);
-
-
-            // ---------------------------------------------
-            // ALREADY EXISTS -> DO NOT INSERT
-            // ---------------------------------------------
-
-            if (existing != null) {
-
-                continue;
-            }
-
-
-            // ---------------------------------------------
-            // MISSING -> CREATE
-            // ---------------------------------------------
 
             createOccurrenceIfMissing(
                     task,
@@ -1450,7 +1477,7 @@ public class StudyTaskService {
 
 
         LocalDateTime now =
-                LocalDateTime.now();
+                LocalDateTime.now(INDIA_ZONE);
 
 
         if (!now.isBefore(lockTime)) {
@@ -1509,7 +1536,7 @@ public class StudyTaskService {
                 );
 
         LocalDate today =
-                LocalDate.now();
+                LocalDate.now(INDIA_ZONE);
 
         List<StudyTaskOccurrence>
                 futureOccurrences =
@@ -1580,10 +1607,6 @@ public class StudyTaskService {
                         );
 
 
-        // -------------------------------------------------
-        // GET PARENT TASK
-        // -------------------------------------------------
-
         StudyTask parentTask =
                 occurrence.getStudyTask();
 
@@ -1594,10 +1617,6 @@ public class StudyTaskService {
             );
         }
 
-
-        // -------------------------------------------------
-        // OCCURRENCE DATE
-        // -------------------------------------------------
 
         LocalDate occurrenceDate =
                 occurrence.getOccurrenceDate();
@@ -1615,7 +1634,7 @@ public class StudyTaskService {
         // -------------------------------------------------
 
         if (occurrenceDate.isBefore(
-                LocalDate.now())) {
+                LocalDate.now(INDIA_ZONE))) {
 
             throw new RuntimeException(
                     "You cannot edit a past study occurrence."
@@ -1635,10 +1654,6 @@ public class StudyTaskService {
             );
         }
 
-
-        // -------------------------------------------------
-        // ORIGINAL OCCURRENCE START
-        // -------------------------------------------------
 
         LocalTime originalStartTime =
                 occurrence.getStartTime();
@@ -1663,7 +1678,7 @@ public class StudyTaskService {
 
 
         LocalDateTime now =
-                LocalDateTime.now();
+                LocalDateTime.now(INDIA_ZONE);
 
 
         // -------------------------------------------------
@@ -1771,7 +1786,6 @@ public class StudyTaskService {
             }
 
 
-            // NEW USER-FACING MESSAGE
             throw new RuntimeException(
                     "Another task already exists at this time"
             );
@@ -1797,10 +1811,6 @@ public class StudyTaskService {
         }
 
 
-        // -------------------------------------------------
-        // FIND OCCURRENCE + USER OWNERSHIP
-        // -------------------------------------------------
-
         StudyTaskOccurrence occurrence =
                 occurrenceRepository
                         .findByIdAndStudyTaskUserEmail(
@@ -1814,10 +1824,6 @@ public class StudyTaskService {
                         );
 
 
-        // -------------------------------------------------
-        // CHECK PARENT TASK
-        // -------------------------------------------------
-
         StudyTask parentTask =
                 occurrence.getStudyTask();
 
@@ -1829,24 +1835,13 @@ public class StudyTaskService {
         }
 
 
-        // -------------------------------------------------
-        // CHECK OCCURRENCE DATE
-        // -------------------------------------------------
-
-        LocalDate occurrenceDate =
-                occurrence.getOccurrenceDate();
-
-        if (occurrenceDate == null) {
+        if (occurrence.getOccurrenceDate() == null) {
 
             throw new RuntimeException(
                     "Occurrence date is missing."
             );
         }
 
-
-        // -------------------------------------------------
-        // CHECK ALREADY COMPLETED
-        // -------------------------------------------------
 
         if ("COMPLETED".equalsIgnoreCase(
                 occurrence.getStatus())) {
@@ -1866,10 +1861,6 @@ public class StudyTaskService {
         );
 
 
-        // -------------------------------------------------
-        // SAVE
-        // -------------------------------------------------
-
         return occurrenceRepository.save(
                 occurrence
         );
@@ -1887,10 +1878,6 @@ public class StudyTaskService {
         validateUserEmail(userEmail);
 
 
-        // -------------------------------------------------
-        // FIND PARENT TASK
-        // -------------------------------------------------
-
         StudyTask existingTask =
                 studyTaskRepository
                         .findByIdAndUserEmail(
@@ -1904,18 +1891,10 @@ public class StudyTaskService {
                         );
 
 
-        // -------------------------------------------------
-        // MARK PARENT COMPLETED
-        // -------------------------------------------------
-
         existingTask.setStatus(
                 "COMPLETED"
         );
 
-
-        // -------------------------------------------------
-        // MARK ALL OCCURRENCES COMPLETED
-        // -------------------------------------------------
 
         List<StudyTaskOccurrence> occurrences =
                 occurrenceRepository
@@ -1959,10 +1938,6 @@ public class StudyTaskService {
 
         validateUserEmail(userEmail);
 
-
-        // -------------------------------------------------
-        // FIND PARENT TASK
-        // -------------------------------------------------
 
         StudyTask existingTask =
                 studyTaskRepository

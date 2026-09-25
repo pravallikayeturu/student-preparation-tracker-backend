@@ -21,7 +21,6 @@ import java.util.Optional;
 public class NotificationController {
 
     private final NotificationRepository notificationRepository;
-
     private final StudyTaskRepository studyTaskRepository;
 
     // =====================================================
@@ -60,10 +59,9 @@ public class NotificationController {
                                 userEmail
                         );
 
-        List<Map<String, Object>> response =
-                createNotificationResponse(notifications);
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(
+                createNotificationResponse(notifications)
+        );
     }
 
     // =====================================================
@@ -90,14 +88,13 @@ public class NotificationController {
                                 userEmail
                         );
 
-        List<Map<String, Object>> response =
-                createNotificationResponse(notifications);
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(
+                createNotificationResponse(notifications)
+        );
     }
 
     // =====================================================
-    // ADD STUDY TASK DEADLINE TO NOTIFICATION RESPONSE
+    // CREATE FRONTEND NOTIFICATION RESPONSE
     // =====================================================
 
     private List<Map<String, Object>> createNotificationResponse(
@@ -114,11 +111,6 @@ public class NotificationController {
             item.put(
                     "id",
                     notification.getId()
-            );
-
-            item.put(
-                    "userEmail",
-                    notification.getUserEmail()
             );
 
             item.put(
@@ -152,7 +144,7 @@ public class NotificationController {
             );
 
             // =================================================
-            // GET DEADLINE FROM THE ORIGINAL STUDY TASK
+            // GET DEADLINE FROM USER'S OWN STUDY TASK
             // =================================================
 
             if (notification.getStudyTaskId() != null) {
@@ -301,7 +293,7 @@ public class NotificationController {
     }
 
     // =====================================================
-    // MARK ALL NOTIFICATIONS AS READ
+    // MARK ALL CURRENT USER'S NOTIFICATIONS AS READ
     // =====================================================
 
     @PutMapping("/read-all")
@@ -325,10 +317,13 @@ public class NotificationController {
                         );
 
         for (Notification notification : notifications) {
+
             notification.setRead(true);
         }
 
-        notificationRepository.saveAll(notifications);
+        notificationRepository.saveAll(
+                notifications
+        );
 
         return ResponseEntity.ok(
                 "All notifications marked as read."
@@ -368,10 +363,9 @@ public class NotificationController {
                     .body("Notification not found.");
         }
 
-        Notification notification =
-                optionalNotification.get();
-
-        notificationRepository.delete(notification);
+        notificationRepository.delete(
+                optionalNotification.get()
+        );
 
         return ResponseEntity.ok(
                 "Notification deleted successfully."

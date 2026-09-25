@@ -1,4 +1,3 @@
-
 package com.pravallika.student_preparation_tracker.repository;
 
 import com.pravallika.student_preparation_tracker.entity.Notification;
@@ -10,33 +9,53 @@ import java.util.Optional;
 public interface NotificationRepository
         extends JpaRepository<Notification, Long> {
 
-    // Get all notifications for a user
+    // =========================================
+    // GET ALL NOTIFICATIONS FOR A USER
+    // =========================================
+
     List<Notification> findByUserEmailOrderByCreatedAtDesc(
             String userEmail
     );
 
-    // Get unread notifications for a user
+    // =========================================
+    // GET UNREAD NOTIFICATIONS FOR A USER
+    // =========================================
+
     List<Notification> findByUserEmailAndReadFalseOrderByCreatedAtDesc(
             String userEmail
     );
 
-    // Count unread notifications
+    // =========================================
+    // COUNT UNREAD NOTIFICATIONS
+    // =========================================
+
     long countByUserEmailAndReadFalse(
             String userEmail
     );
 
-    // Find one notification belonging to the current user
+    // =========================================
+    // FIND ONE NOTIFICATION BELONGING
+    // TO THE CURRENT USER
+    // =========================================
+
     Optional<Notification> findByIdAndUserEmail(
             Long id,
             String userEmail
     );
 
-    // Delete all notifications belonging to the current user
+    // =========================================
+    // DELETE ALL NOTIFICATIONS BELONGING
+    // TO THE CURRENT USER
+    // =========================================
+
     void deleteByUserEmail(
             String userEmail
     );
 
-    // Check whether a study notification already exists
+    // =========================================
+    // CHECK DUPLICATE DEADLINE NOTIFICATION
+    // =========================================
+
     boolean existsByUserEmailAndStudyTaskIdAndType(
             String userEmail,
             Long studyTaskId,
